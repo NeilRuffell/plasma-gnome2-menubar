@@ -263,9 +263,7 @@ PlasmoidItem {
         showAllAppsCategorized: true
         showRecentApps: false
         showRecentDocs: false
-        showRecentFolders: false
         showPowerSession: false
-        showRootSeparator: false
 
         onRefreshed: root.applicationsDirty = true
     }
