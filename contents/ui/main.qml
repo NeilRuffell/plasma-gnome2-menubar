@@ -8,6 +8,7 @@
 
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls as QQC2
 
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.components as PC3
@@ -18,7 +19,7 @@ import org.kde.plasma.private.kicker as Kicker
 PlasmoidItem {
     id: root
 
-    preferredRepresentation: compactRepresentation
+    preferredRepresentation: fullRepresentation
 
     property var kcmEntries: []
     property var adminEntries: []
@@ -26,6 +27,7 @@ PlasmoidItem {
     property bool applicationsDirty: true
     property bool systemDirty: true
 
+    // Objects generated inside each root menu. They are destroyed in reverse order.
     property var applicationObjects: []
     property var placesObjects: []
     property var systemObjects: []
@@ -63,7 +65,9 @@ PlasmoidItem {
 
     Component {
         id: menuComponent
-        PC3.Menu { }
+        PC3.Menu {
+            popupType: QQC2.Popup.Window
+        }
     }
 
     Component {
@@ -100,6 +104,7 @@ PlasmoidItem {
         return item
     }
 
+    // Recursively converts KDE's application model into native cascading Plasma menus.
     function appendKickerModel(menu, sourceModel, objects, depth) {
         if (!sourceModel || depth > 8) {
             return
@@ -137,6 +142,8 @@ PlasmoidItem {
     function rebuildPlaces(menu) {
         clearGenerated(placesObjects)
 
+        // ComputerModel contains KRunner first (when permitted). We set its system-app
+        // list empty, leaving only that optional row plus KFilePlacesModel-backed places.
         let firstPlace = 0
         if (computerModel.count > 0 && computerModel.labelForRow(0) === i18n("Show KRunner")) {
             firstPlace = 1
@@ -224,7 +231,6 @@ PlasmoidItem {
 
     function refreshDiscovery() {
         let pending = 2
-
         function completedOne() {
             pending -= 1
             if (pending === 0) {
@@ -330,12 +336,11 @@ PlasmoidItem {
         onTriggered: root.refreshDiscovery()
     }
 
-    compactRepresentation: Item {
-        id: compactRoot
+    fullRepresentation: Item {
+        id: menuBarRoot
 
         implicitWidth: menuRow.implicitWidth
         implicitHeight: menuRow.implicitHeight
-
         Layout.minimumWidth: implicitWidth
         Layout.preferredWidth: implicitWidth
         Layout.maximumWidth: implicitWidth
@@ -356,13 +361,12 @@ PlasmoidItem {
                     if (root.applicationsDirty || applicationsMenu.count === 0) {
                         root.rebuildApplications(applicationsMenu)
                     }
-                    applicationsMenu.open()
+                    applicationsMenu.popup(applicationsButton, 0, applicationsButton.height)
                 }
 
                 PC3.Menu {
                     id: applicationsMenu
-                    x: 0
-                    y: applicationsButton.height
+                    popupType: QQC2.Popup.Window
                 }
             }
 
@@ -373,13 +377,12 @@ PlasmoidItem {
 
                 onClicked: {
                     root.rebuildPlaces(placesMenu)
-                    placesMenu.open()
+                    placesMenu.popup(placesButton, 0, placesButton.height)
                 }
 
                 PC3.Menu {
                     id: placesMenu
-                    x: 0
-                    y: placesButton.height
+                    popupType: QQC2.Popup.Window
                 }
             }
 
@@ -392,15 +395,15 @@ PlasmoidItem {
                     if (root.systemDirty || systemMenu.count === 0) {
                         root.rebuildSystem(systemMenu)
                     }
-                    systemMenu.open()
+                    systemMenu.popup(systemButton, 0, systemButton.height)
                 }
 
                 PC3.Menu {
                     id: systemMenu
-                    x: 0
-                    y: systemButton.height
+                    popupType: QQC2.Popup.Window
                 }
             }
         }
     }
+
 }
