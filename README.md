@@ -27,6 +27,7 @@ Early Plasma 6 implementation (`0.1.0`). Applications, Places, Recent Documents,
 - `python3`
 - `kcmshell6`
 - `gio`
+- `zip` (to build the `.plasmoid` archive)
 - Plasma's Kicker QML module
 
 The widget intentionally uses Plasma's private Kicker QML API because Plasma's own Application Menu and Kickoff use those models as well.
@@ -34,7 +35,7 @@ The widget intentionally uses Plasma's private Kicker QML API because Plasma's o
 ## Build
 
 ```bash
-./build.sh
+bash build.sh
 ```
 
 This creates:
