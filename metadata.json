@@ -1,0 +1,20 @@
+{
+  "KPlugin": {
+    "Authors": [
+      {
+        "Name": "Neil Ruffell"
+      }
+    ],
+    "Category": "Application Launchers",
+    "Description": "GNOME 2-style Applications, Places and System menus using Plasma/KDE data models",
+    "EnabledByDefault": true,
+    "Icon": "start-here-kde",
+    "Id": "org.local.plasma.gnome2menubar",
+    "License": "GPL-2.0-or-later",
+    "Name": "Applications Places System",
+    "Version": "0.1.0",
+    "Website": "https://github.com/NeilRuffell/plasma-gnome2-menubar",
+    "BugReportUrl": "https://github.com/NeilRuffell/plasma-gnome2-menubar/issues"
+  },
+  "X-Plasma-API-Minimum-Version": "6.0"
+}
