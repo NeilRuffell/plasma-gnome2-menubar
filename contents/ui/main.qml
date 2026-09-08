@@ -224,6 +224,7 @@ PlasmoidItem {
 
     function refreshDiscovery() {
         let pending = 2
+
         function completedOne() {
             pending -= 1
             if (pending === 0) {
@@ -329,88 +330,75 @@ PlasmoidItem {
         onTriggered: root.refreshDiscovery()
     }
 
-    compactRepresentation: Component {
-        Item {
-            id: compactRoot
+    compactRepresentation: Item {
+        id: compactRoot
 
-            implicitWidth: menuRow.implicitWidth
-            implicitHeight: Math.max(menuRow.implicitHeight, Kirigami.Units.iconSizes.smallMedium)
-            Layout.minimumWidth: implicitWidth
-            Layout.preferredWidth: implicitWidth
-            Layout.maximumWidth: implicitWidth
+        implicitWidth: menuRow.implicitWidth
+        implicitHeight: menuRow.implicitHeight
 
-            Row {
-                id: menuRow
-                anchors.fill: parent
-                spacing: 0
+        Layout.minimumWidth: implicitWidth
+        Layout.preferredWidth: implicitWidth
+        Layout.maximumWidth: implicitWidth
+        Layout.minimumHeight: implicitHeight
 
-                PC3.ToolButton {
-                    id: applicationsButton
-                    height: parent.height
-                    text: i18n("Applications")
-                    display: PC3.AbstractButton.TextOnly
+        Row {
+            id: menuRow
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 0
 
-                    onClicked: {
-                        if (root.applicationsDirty || applicationsMenu.count === 0) {
-                            root.rebuildApplications(applicationsMenu)
-                        }
-                        applicationsMenu.open()
+            PC3.ToolButton {
+                id: applicationsButton
+                text: i18n("Applications")
+                display: PC3.AbstractButton.TextOnly
+
+                onClicked: {
+                    if (root.applicationsDirty || applicationsMenu.count === 0) {
+                        root.rebuildApplications(applicationsMenu)
                     }
-
-                    PC3.Menu {
-                        id: applicationsMenu
-                        x: 0
-                        y: applicationsButton.height
-                    }
+                    applicationsMenu.open()
                 }
 
-                PC3.ToolButton {
-                    id: placesButton
-                    height: parent.height
-                    text: i18n("Places")
-                    display: PC3.AbstractButton.TextOnly
-
-                    onClicked: {
-                        root.rebuildPlaces(placesMenu)
-                        placesMenu.open()
-                    }
-
-                    PC3.Menu {
-                        id: placesMenu
-                        x: 0
-                        y: placesButton.height
-                    }
-                }
-
-                PC3.ToolButton {
-                    id: systemButton
-                    height: parent.height
-                    text: i18n("System")
-                    display: PC3.AbstractButton.TextOnly
-
-                    onClicked: {
-                        if (root.systemDirty || systemMenu.count === 0) {
-                            root.rebuildSystem(systemMenu)
-                        }
-                        systemMenu.open()
-                    }
-
-                    PC3.Menu {
-                        id: systemMenu
-                        x: 0
-                        y: systemButton.height
-                    }
+                PC3.Menu {
+                    id: applicationsMenu
+                    x: 0
+                    y: applicationsButton.height
                 }
             }
 
-            Timer {
-                interval: 750
-                running: true
-                repeat: false
-                onTriggered: {
-                    if (applicationsModel.count > 0) {
-                        root.rebuildApplications(applicationsMenu)
+            PC3.ToolButton {
+                id: placesButton
+                text: i18n("Places")
+                display: PC3.AbstractButton.TextOnly
+
+                onClicked: {
+                    root.rebuildPlaces(placesMenu)
+                    placesMenu.open()
+                }
+
+                PC3.Menu {
+                    id: placesMenu
+                    x: 0
+                    y: placesButton.height
+                }
+            }
+
+            PC3.ToolButton {
+                id: systemButton
+                text: i18n("System")
+                display: PC3.AbstractButton.TextOnly
+
+                onClicked: {
+                    if (root.systemDirty || systemMenu.count === 0) {
+                        root.rebuildSystem(systemMenu)
                     }
+                    systemMenu.open()
+                }
+
+                PC3.Menu {
+                    id: systemMenu
+                    x: 0
+                    y: systemButton.height
                 }
             }
         }
