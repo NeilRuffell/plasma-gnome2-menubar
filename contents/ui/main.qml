@@ -2,15 +2,12 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * GNOME 2-style Applications / Places / System menu bar for Plasma 6.
- * Applications, Places and session actions come from KDE's live Kicker models.
- * Preferences and Administration are discovered from the current machine.
  */
 
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 
-import org.kde.kirigami as Kirigami
 import org.kde.plasma.components as PC3
 import org.kde.plasma.plasma5support as Plasma5Support
 import org.kde.plasma.plasmoid
@@ -27,7 +24,6 @@ PlasmoidItem {
     property bool applicationsDirty: true
     property bool systemDirty: true
 
-    // Objects generated inside each root menu. They are destroyed in reverse order.
     property var applicationObjects: []
     property var placesObjects: []
     property var systemObjects: []
@@ -63,6 +59,29 @@ PlasmoidItem {
         }
     }
 
+    function modelIcon(sourceModel, row) {
+        if (!Plasmoid.configuration.showIcons || !sourceModel) {
+            return ""
+        }
+        try {
+            return sourceModel.data(sourceModel.index(row, 0), Qt.DecorationRole) || ""
+        } catch (e) {
+            return ""
+        }
+    }
+
+    function applyIcon(target, iconValue) {
+        if (!Plasmoid.configuration.showIcons || !target || !iconValue) {
+            return
+        }
+
+        if (typeof iconValue === "string") {
+            target.icon.name = iconValue
+        } else {
+            target.icon.source = iconValue
+        }
+    }
+
     Component {
         id: menuComponent
         PC3.Menu {
@@ -88,7 +107,7 @@ PlasmoidItem {
         }
     }
 
-    function addActionItem(menu, objects, text, callback, enabled) {
+    function addActionItem(menu, objects, text, callback, enabled, iconValue) {
         const item = menuItemComponent.createObject(menu, {
             "text": text,
             "enabled": enabled === undefined ? true : enabled
@@ -96,6 +115,9 @@ PlasmoidItem {
         if (!item) {
             return null
         }
+
+        applyIcon(item, iconValue)
+
         if (callback) {
             item.clicked.connect(callback)
         }
@@ -104,7 +126,16 @@ PlasmoidItem {
         return item
     }
 
-    // Recursively converts KDE's application model into native cascading Plasma menus.
+    function createSubmenu(menu, objects, title, iconValue) {
+        const submenu = menuComponent.createObject(menu, {"title": title})
+        if (!submenu) {
+            return null
+        }
+        applyIcon(submenu, iconValue)
+        objects.push(submenu)
+        return submenu
+    }
+
     function appendKickerModel(menu, sourceModel, objects, depth) {
         if (!sourceModel || depth > 8) {
             return
@@ -113,11 +144,11 @@ PlasmoidItem {
         for (let row = 0; row < sourceModel.count; ++row) {
             const text = sourceModel.labelForRow(row)
             const childModel = sourceModel.modelForRow(row)
+            const iconValue = modelIcon(sourceModel, row)
 
             if (childModel) {
-                const submenu = menuComponent.createObject(menu, {"title": text})
+                const submenu = createSubmenu(menu, objects, text, iconValue)
                 if (submenu) {
-                    objects.push(submenu)
                     appendKickerModel(submenu, childModel, objects, depth + 1)
                     menu.addMenu(submenu)
                 }
@@ -128,7 +159,7 @@ PlasmoidItem {
                 const capturedRow = row
                 addActionItem(menu, objects, text, function() {
                     capturedModel.trigger(capturedRow, "", null)
-                })
+                }, true, iconValue)
             }
         }
     }
@@ -142,8 +173,6 @@ PlasmoidItem {
     function rebuildPlaces(menu) {
         clearGenerated(placesObjects)
 
-        // ComputerModel contains KRunner first (when permitted). We set its system-app
-        // list empty, leaving only that optional row plus KFilePlacesModel-backed places.
         let firstPlace = 0
         if (computerModel.count > 0 && computerModel.labelForRow(0) === i18n("Show KRunner")) {
             firstPlace = 1
@@ -157,23 +186,22 @@ PlasmoidItem {
             const capturedRow = row
             addActionItem(menu, placesObjects, text, function() {
                 computerModel.trigger(capturedRow, "", null)
-            })
+            }, true, modelIcon(computerModel, row))
         }
 
         addSeparator(menu, placesObjects)
 
-        const recentMenu = menuComponent.createObject(menu, {"title": i18n("Recent Documents")})
+        const recentMenu = createSubmenu(menu, placesObjects, i18n("Recent Documents"), "document-open-recent")
         if (recentMenu) {
-            placesObjects.push(recentMenu)
             if (recentDocumentsModel.count === 0) {
-                addActionItem(recentMenu, placesObjects, i18n("No Recent Documents"), null, false)
+                addActionItem(recentMenu, placesObjects, i18n("No Recent Documents"), null, false, "")
             } else {
                 for (let row = 0; row < recentDocumentsModel.count; ++row) {
                     const text = recentDocumentsModel.labelForRow(row)
                     const capturedRow = row
                     addActionItem(recentMenu, placesObjects, text, function() {
                         recentDocumentsModel.trigger(capturedRow, "", null)
-                    })
+                    }, true, modelIcon(recentDocumentsModel, row))
                 }
             }
             menu.addMenu(recentMenu)
@@ -181,16 +209,16 @@ PlasmoidItem {
     }
 
     function appendDiscoveredSubmenu(menu, objects, title, entries, kind) {
-        const submenu = menuComponent.createObject(menu, {"title": title})
+        const submenuIcon = kind === "kcm" ? "preferences-system" : "preferences-system-administration"
+        const submenu = createSubmenu(menu, objects, title, submenuIcon)
         if (!submenu) {
             return
         }
-        objects.push(submenu)
 
         if (!discoveryReady) {
-            addActionItem(submenu, objects, i18n("Loading…"), null, false)
+            addActionItem(submenu, objects, i18n("Loading…"), null, false, "")
         } else if (!entries || entries.length === 0) {
-            addActionItem(submenu, objects, i18n("No entries found"), null, false)
+            addActionItem(submenu, objects, i18n("No entries found"), null, false, "")
         } else {
             for (let i = 0; i < entries.length; ++i) {
                 const entry = entries[i]
@@ -198,12 +226,12 @@ PlasmoidItem {
                     const moduleId = entry.id
                     addActionItem(submenu, objects, entry.name, function() {
                         executable.exec(helperCommand("launch-kcm", moduleId))
-                    })
+                    }, true, entry.icon || "preferences-system")
                 } else {
                     const desktopPath = entry.path
                     addActionItem(submenu, objects, entry.name, function() {
                         executable.exec(helperCommand("launch-desktop", desktopPath))
-                    })
+                    }, true, entry.icon || "preferences-system-administration")
                 }
             }
         }
@@ -223,7 +251,7 @@ PlasmoidItem {
             const capturedRow = row
             addActionItem(menu, systemObjects, text, function() {
                 systemActionsModel.trigger(capturedRow, "", null)
-            })
+            }, true, modelIcon(systemActionsModel, row))
         }
 
         systemDirty = false
@@ -271,7 +299,6 @@ PlasmoidItem {
         showRecentApps: false
         showRecentDocs: false
         showPowerSession: false
-
         onRefreshed: root.applicationsDirty = true
     }
 
@@ -327,6 +354,14 @@ PlasmoidItem {
         }
     }
 
+    Connections {
+        target: Plasmoid.configuration
+        function onShowIconsChanged() {
+            root.applicationsDirty = true
+            root.systemDirty = true
+        }
+    }
+
     Component.onCompleted: refreshDiscovery()
 
     Timer {
@@ -356,7 +391,6 @@ PlasmoidItem {
                 id: applicationsButton
                 text: i18n("Applications")
                 display: PC3.AbstractButton.TextOnly
-
                 onClicked: {
                     if (root.applicationsDirty || applicationsMenu.count === 0) {
                         root.rebuildApplications(applicationsMenu)
@@ -374,7 +408,6 @@ PlasmoidItem {
                 id: placesButton
                 text: i18n("Places")
                 display: PC3.AbstractButton.TextOnly
-
                 onClicked: {
                     root.rebuildPlaces(placesMenu)
                     placesMenu.popup(placesButton, 0, placesButton.height)
@@ -390,7 +423,6 @@ PlasmoidItem {
                 id: systemButton
                 text: i18n("System")
                 display: PC3.AbstractButton.TextOnly
-
                 onClicked: {
                     if (root.systemDirty || systemMenu.count === 0) {
                         root.rebuildSystem(systemMenu)
@@ -405,5 +437,4 @@ PlasmoidItem {
             }
         }
     }
-
 }
