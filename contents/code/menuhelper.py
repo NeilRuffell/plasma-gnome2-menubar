@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Discovery/launch helper for the Plasma GNOME-2-style menubar.
 
-Applications/Places/session actions are handled directly by Plasma QML models.
-This helper discovers KDE System Settings modules and XDG administration apps.
+Applications, Places and session actions are handled directly by Plasma QML
+models. This helper discovers KDE System Settings modules/categories and XDG
+administration applications.
 """
 
 from __future__ import annotations
@@ -23,11 +24,31 @@ def emit(value: Any) -> None:
 
 
 def data_roots() -> list[Path]:
-    home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
-    data_dirs = os.environ.get(
-        "XDG_DATA_DIRS", "/usr/local/share:/usr/share"
-    ).split(":")
-    return [home, *[Path(item) for item in data_dirs if item]]
+    """Return XDG data roots, always including the standard system roots."""
+    roots: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(path: Path) -> None:
+        try:
+            resolved = path.expanduser().resolve()
+        except OSError:
+            resolved = path.expanduser()
+        if resolved not in seen:
+            seen.add(resolved)
+            roots.append(resolved)
+
+    add(Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")))
+
+    for item in os.environ.get("XDG_DATA_DIRS", "").split(os.pathsep):
+        if item:
+            add(Path(item))
+
+    # Do not trust a desktop session to have preserved the XDG defaults.
+    # KDE/System Settings packages on Debian/Ubuntu install here.
+    add(Path("/usr/local/share"))
+    add(Path("/usr/share"))
+
+    return roots
 
 
 def application_dirs() -> list[Path]:
@@ -45,9 +66,7 @@ def read_desktop_file(path: Path) -> configparser.SectionProxy | None:
 
 
 def bool_value(section: configparser.SectionProxy, key: str) -> bool:
-    return section.get(key, "false").strip().lower() in {
-        "1", "true", "yes"
-    }
+    return section.get(key, "false").strip().lower() in {"1", "true", "yes"}
 
 
 def integer_value(value: Any, default: int = 100) -> int:
@@ -62,6 +81,7 @@ def qtplugininfo_executable() -> str | None:
         shutil.which("qtplugininfo6"),
         shutil.which("qplugininfo6"),
         shutil.which("qtplugininfo"),
+        "/usr/bin/qtplugininfo6",
         "/usr/lib/qt6/bin/qtplugininfo",
     )
     for candidate in candidates:
@@ -102,17 +122,42 @@ def qt_plugin_roots() -> list[Path]:
         except OSError:
             pass
 
-    for base in (
-        Path("/usr/lib"),
-        Path("/usr/local/lib"),
-        Path.home() / ".local/lib",
-    ):
-        add(base / "qt6/plugins")
-        if base.is_dir():
-            for candidate in base.glob("*/qt6/plugins"):
-                add(candidate)
+    # Debian/Ubuntu multiarch layouts, plus non-multiarch fallbacks.
+    for candidate in Path("/usr/lib").glob("*/qt6/plugins"):
+        add(candidate)
+    for candidate in Path("/usr/local/lib").glob("*/qt6/plugins"):
+        add(candidate)
+    add(Path("/usr/lib/qt6/plugins"))
+    add(Path("/usr/local/lib/qt6/plugins"))
+    add(Path.home() / ".local/lib/qt6/plugins")
 
     return roots
+
+
+def systemsettings_plugin_files() -> list[Path]:
+    files: list[Path] = []
+    seen: set[Path] = set()
+    namespaces = (
+        Path("plasma/kcms/systemsettings"),
+        Path("plasma/kcms/systemsettings_qwidgets"),
+        Path("plasma/kcms"),
+    )
+
+    for plugin_root in qt_plugin_roots():
+        for namespace in namespaces:
+            directory = plugin_root / namespace
+            if not directory.is_dir():
+                continue
+            for path in directory.glob("*.so"):
+                try:
+                    resolved = path.resolve()
+                except OSError:
+                    resolved = path
+                if resolved not in seen:
+                    seen.add(resolved)
+                    files.append(resolved)
+
+    return files
 
 
 def qt_plugin_metadata(path: Path, tool: str) -> dict[str, Any] | None:
@@ -137,6 +182,7 @@ def qt_plugin_metadata(path: Path, tool: str) -> dict[str, Any] | None:
 
     if not isinstance(document, dict):
         return None
+
     metadata = document.get("MetaData")
     return metadata if isinstance(metadata, dict) else None
 
@@ -146,15 +192,34 @@ def localized_json_string(obj: dict[str, Any], key: str) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def category_directories() -> list[Path]:
+    directories: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(path: Path) -> None:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            resolved = path
+        if resolved.is_dir() and resolved not in seen:
+            seen.add(resolved)
+            directories.append(resolved)
+
+    # Explicit standard location used by current KDE System Settings packages.
+    add(Path("/usr/share/systemsettings/categories"))
+    add(Path("/usr/local/share/systemsettings/categories"))
+
+    for root in data_roots():
+        add(root / "systemsettings" / "categories")
+
+    return directories
+
+
 def category_metadata() -> dict[str, dict[str, Any]]:
     """Read KDE System Settings' installed category definitions."""
     categories: dict[str, dict[str, Any]] = {}
 
-    for root in data_roots():
-        directory = root / "systemsettings" / "categories"
-        if not directory.is_dir():
-            continue
-
+    for directory in category_directories():
         for path in directory.glob("*.desktop"):
             section = read_desktop_file(path)
             if section is None:
@@ -175,13 +240,10 @@ def category_metadata() -> dict[str, dict[str, Any]]:
             categories[category_id] = {
                 "type": "category",
                 "id": category_id,
-                "name": section.get("Name", category_id).strip()
-                or category_id,
+                "name": section.get("Name", category_id).strip() or category_id,
                 "icon": section.get("Icon", "").strip(),
                 "parent": parent,
-                "weight": integer_value(
-                    section.get("X-KDE-Weight", "100")
-                ),
+                "weight": integer_value(section.get("X-KDE-Weight", "100")),
                 "children": [],
             }
 
@@ -189,63 +251,45 @@ def category_metadata() -> dict[str, dict[str, Any]]:
 
 
 def plugin_kcm_entries() -> dict[str, dict[str, Any]]:
-    """Read KCM metadata directly from KDE's System Settings plugin namespaces."""
+    """Read KCM metadata directly from KDE's compiled plugin metadata."""
     entries: dict[str, dict[str, Any]] = {}
     tool = qtplugininfo_executable()
     if not tool:
         return entries
 
-    namespaces = (
-        Path("plasma/kcms/systemsettings"),
-        Path("plasma/kcms/systemsettings_qwidgets"),
-        Path("plasma/kcms"),
-    )
+    for path in systemsettings_plugin_files():
+        raw = qt_plugin_metadata(path, tool)
+        if not raw:
+            continue
 
-    for plugin_root in qt_plugin_roots():
-        for namespace in namespaces:
-            directory = plugin_root / namespace
-            if not directory.is_dir():
-                continue
+        plugin = raw.get("KPlugin", {})
+        if not isinstance(plugin, dict):
+            plugin = {}
 
-            for path in directory.glob("*.so"):
-                raw = qt_plugin_metadata(path, tool)
-                if not raw:
-                    continue
+        explicit_id = localized_json_string(plugin, "Id")
+        module_id = explicit_id or path.stem
+        if not module_id or module_id in entries:
+            continue
 
-                plugin = raw.get("KPlugin", {})
-                if not isinstance(plugin, dict):
-                    plugin = {}
+        parent = raw.get("X-KDE-System-Settings-Parent-Category-V2", "")
+        if not isinstance(parent, str) or not parent.strip():
+            parent = raw.get("X-KDE-System-Settings-Parent-Category", "")
+        parent = parent.strip() if isinstance(parent, str) else ""
 
-                explicit_id = localized_json_string(plugin, "Id")
-                module_id = explicit_id or path.stem
-                if not module_id or module_id in entries:
-                    continue
+        # rootcategory is the System Settings landing page rather than a useful
+        # classic Preferences entry. lost-and-found is UI plumbing as well.
+        if not parent or parent in {"rootcategory", "lost-and-found"}:
+            continue
 
-                parent = raw.get(
-                    "X-KDE-System-Settings-Parent-Category-V2", ""
-                )
-                if not isinstance(parent, str) or not parent.strip():
-                    parent = raw.get(
-                        "X-KDE-System-Settings-Parent-Category", ""
-                    )
-                parent = parent.strip() if isinstance(parent, str) else ""
-
-                if not parent or parent in {"rootcategory", "lost-and-found"}:
-                    continue
-
-                entries[module_id] = {
-                    "type": "item",
-                    "kind": "kcm",
-                    "id": module_id,
-                    "name": localized_json_string(plugin, "Name")
-                    or module_id,
-                    "icon": localized_json_string(plugin, "Icon")
-                    or "preferences-system",
-                    "parent": parent,
-                    "weight": integer_value(
-                        raw.get("X-KDE-Weight", 100)
-                    ),
-                }
+        entries[module_id] = {
+            "type": "item",
+            "kind": "kcm",
+            "id": module_id,
+            "name": localized_json_string(plugin, "Name") or module_id,
+            "icon": localized_json_string(plugin, "Icon") or "preferences-system",
+            "parent": parent,
+            "weight": integer_value(raw.get("X-KDE-Weight", 100)),
+        }
 
     return entries
 
@@ -255,9 +299,8 @@ def desktop_kcm_entries(
 ) -> dict[str, dict[str, Any]]:
     """Fallback to generated KCM .desktop launchers.
 
-    Plasma/KCMUtils installs these even though they generally do not contain
-    category metadata. Unknown-category entries are retained and later placed
-    in an automatic Other submenu rather than silently disappearing.
+    Generated launchers do not normally include category metadata, so they are
+    used only for modules whose compiled metadata could not be read.
     """
     entries = dict(existing)
 
@@ -312,30 +355,27 @@ def desktop_kcm_entries(
             "kind": "kcm",
             "id": module_id,
             "name": section.get("Name", module_id).strip() or module_id,
-            "icon": section.get("Icon", "").strip()
-            or "preferences-system",
+            "icon": section.get("Icon", "").strip() or "preferences-system",
             "parent": parent,
-            "weight": integer_value(
-                section.get("X-KDE-Weight", "100")
-            ),
+            "weight": integer_value(section.get("X-KDE-Weight", "100")),
         }
 
     return entries
 
 
 def preference_tree() -> list[dict[str, Any]]:
-    """Build a live System Settings category tree."""
+    """Build the live KDE System Settings hierarchy for Preferences."""
     categories = category_metadata()
-    modules = list(
-        desktop_kcm_entries(plugin_kcm_entries()).values()
-    )
+    plugin_entries = plugin_kcm_entries()
+    modules = list(desktop_kcm_entries(plugin_entries).values())
 
     if not modules:
         return []
 
     loose: list[dict[str, Any]] = []
-    for module in modules:
-        parent = module.pop("parent", "")
+    for original in modules:
+        module = dict(original)
+        parent = str(module.pop("parent", "") or "").strip()
         category = categories.get(parent)
         if category is not None:
             category["children"].append(module)
@@ -347,7 +387,7 @@ def preference_tree() -> list[dict[str, Any]]:
         if category_id in {"rootcategory", "lost-and-found"}:
             continue
 
-        parent = category.get("parent", "")
+        parent = str(category.get("parent", "") or "").strip()
         if (
             parent
             and parent in categories
@@ -404,9 +444,7 @@ def list_admin_apps() -> list[dict[str, str]]:
         if not directory.is_dir():
             continue
         for path in directory.rglob("*.desktop"):
-            relative_id = str(
-                path.relative_to(directory)
-            ).replace(os.sep, "-")
+            relative_id = str(path.relative_to(directory)).replace(os.sep, "-")
             desktop_files.setdefault(relative_id, path)
 
     entries: list[dict[str, str]] = []
@@ -418,9 +456,7 @@ def list_admin_apps() -> list[dict[str, str]]:
             continue
         if section.get("Type", "") != "Application":
             continue
-        if bool_value(section, "Hidden") or bool_value(
-            section, "NoDisplay"
-        ):
+        if bool_value(section, "Hidden") or bool_value(section, "NoDisplay"):
             continue
 
         categories = {
@@ -430,10 +466,7 @@ def list_admin_apps() -> list[dict[str, str]]:
         }
         if "System" not in categories:
             continue
-        if any(
-            item.startswith("X-KDE-settings-")
-            for item in categories
-        ):
+        if any(item.startswith("X-KDE-settings-") for item in categories):
             continue
 
         name = section.get("Name", "").strip()
