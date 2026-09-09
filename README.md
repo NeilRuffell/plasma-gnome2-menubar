@@ -6,45 +6,51 @@ A Plasma 6 panel applet recreating the classic GNOME 2 top-left menubar:
 Applications   Places   System
 ```
 
-The project stays KDE/Plasma-native. It does not run `mate-panel`, `gnome-panel`, keep a hand-written application list, or implement its own popup state machine.
+The project stays KDE/Plasma-native. It does not run `mate-panel`, `gnome-panel`, maintain a hand-written application list, or implement a second popup/menu framework.
 
 ## Architecture
 
-Version `0.8.0` changes the applet from a pure-QML popup implementation to a compiled Plasma applet so its visible menus can use the same **QWidget/QMenu foundation and switching pattern as Plasma's Global Menu applet**.
+Version `0.9.0` is a native Plasma applet and deliberately follows Plasma's own **Global Menu** implementation for top-level menu presentation and switching.
 
-### Menubar interaction
+### Menubar interaction and dropdowns
 
-The native C++ backend follows `plasma-workspace/applets/appmenu/appmenuapplet.cpp`:
+The C++ backend follows `plasma-workspace/applets/appmenu/appmenuapplet.cpp`:
 
-- a single persistent `QMenu` is used while moving between top-level headings;
-- source-menu `QAction`s are moved into that visible menu and restored when it closes;
-- the source menu's `menuAction()` is redirected/restored the same way Global Menu does it;
-- the visible `QMenu` installs the same mouse-move event-filter bridge used by Global Menu, allowing the menu to retain the pointer grab while movement over another panel heading changes the active menu;
-- the same Qt mouse-ungrab workaround used by Global Menu is retained;
-- the `QMenu` is made transient to the panel window and uses the same `_breeze_menu_seamless_edges` property.
+- the visible dropdown is a real Qt Widgets **`QMenu`**, the same menu foundation used by Plasma Global Menu;
+- a single persistent visible `QMenu` remains alive while the pointer moves between **Applications / Places / System**;
+- each heading has a source `QMenu`; its `QAction`s are transferred into the persistent visible menu when that heading becomes active and restored when switching or closing;
+- when another heading becomes active, the existing visible `QMenu` is **moved and repopulated**, not closed and replaced by a second popup;
+- the visible `QMenu` installs the same mouse-move event-filter bridge used by Global Menu, because the native menu owns the pointer grab while open;
+- the same mouse-ungrab workaround, transient-parent handling, screen-boundary clamping, and `_breeze_menu_seamless_edges` property used by Global Menu are retained;
+- left/right keyboard movement uses the same active-index bridge.
 
-This means menu switching, outside-click dismissal, keyboard left/right navigation, pointer grabs, and dropdown appearance come from the same Qt Widgets menu machinery used by Plasma Global Menu rather than `PC3.Menu`/Qt Quick popup windows.
+The panel headings use `qml/MenuDelegate.qml`, derived directly from Plasma Global Menu's delegate and the same `widgets/menubaritem` Plasma theme asset. The GridLayout also follows the Global Menu layout: zero spacing, RTL mirroring, panel-orientation flow, and the same zero-size filler item.
 
-The panel headings use a `MenuDelegate.qml` derived directly from Plasma Global Menu's delegate and the same `widgets/menubaritem` Plasma theme asset.
+There is no `PC3.Menu`, Qt Quick `MenuBar`, custom hover timer, or alternate popup state machine in the active implementation.
 
 ### Menu data
 
 - **Applications** — KDE Kicker `RootModel`.
-- **Places** — KDE Kicker `ComputerModel`, backed by `KFilePlacesModel`.
+- **Places** — KDE Kicker `ComputerModel`, backed by `KFilePlacesModel`; model roles distinguish actual places from ComputerModel's non-place entries.
 - **Recent Documents** — KDE Kicker `RecentUsageModel`.
-- **Preferences** — discovered in-process with KDE's `KPluginMetaData` and installed `systemsettings/categories` files, following System Settings' platform/form-factor and `KAuthorized` filtering.
-- **Administration** — the System application subtree from the Kicker application hierarchy.
+- **Preferences** — discovered in-process with KDE `KPluginMetaData`, KConfig, `KAuthorized`, runtime-platform/form-factor filtering, and the installed System Settings category metadata.
+- **Administration** — the live System subtree from the Kicker application hierarchy.
 - **Session actions** — KDE Kicker `SystemModel`.
 
-KCMs are launched with KDE Frameworks' `org.kde.kcmutils.KCMLauncher` API. There is no Python helper and no `qtplugininfo` dependency in v0.8.0.
+KCMs are launched with KDE Frameworks' `org.kde.kcmutils.KCMLauncher` API.
+
+There is **no Python helper, `qtplugininfo`, distro-specific Qt path probing, or sidecar process**.
 
 ## Fedora build requirements
 
+Fedora provides the required Plasma and KDE development packages directly:
+
 ```bash
-sudo dnf install cmake ninja-build extra-cmake-modules \
-    libplasma-devel kf6-kconfig-devel kf6-kcoreaddons-devel \
-    qt6-qtbase-devel qt6-qtdeclarative-devel
+sudo dnf install cmake ninja-build gcc-c++ extra-cmake-modules \
+    libplasma-devel kf6-kconfig-devel kf6-kcoreaddons-devel
 ```
+
+`libplasma-devel` pulls the required Qt 6 base/declarative development dependencies.
 
 ## Build
 
@@ -52,21 +58,31 @@ sudo dnf install cmake ninja-build extra-cmake-modules \
 bash build.sh
 ```
 
-## Install
+The build directory is `./build`.
 
-The native applet is installed through CMake rather than a `.plasmoid` ZIP:
+## Install / update
+
+This is a compiled Plasma applet, so install it through CMake rather than `kpackagetool6` or a `.plasmoid` ZIP:
 
 ```bash
 sudo cmake --install build
 ```
 
-If an older pure-QML development copy exists in your user profile, remove that copy first so it cannot shadow the compiled system applet:
+### Important when upgrading from versions 0.8.x and earlier
+
+Older versions were installed as a user KPackage under the same plugin ID. A user-local copy shadows the compiled system applet, so remove the old package directory after installing 0.9.0:
 
 ```bash
 rm -rf ~/.local/share/plasma/plasmoids/org.local.plasma.gnome2menubar
 ```
 
-Then restart Plasma Shell and add **Applications Places System** from **Add Widgets** if necessary.
+Then restart Plasma Shell:
+
+```bash
+plasmashell --replace &
+```
+
+Existing panel configuration uses the same plugin ID (`org.local.plasma.gnome2menubar`), so Plasma can load the native implementation for the existing widget instance once the old user-local package is gone.
 
 ## Target layout
 
