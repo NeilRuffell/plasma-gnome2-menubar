@@ -540,13 +540,18 @@ QVariantList Gnome2MenuBarApplet::preferenceTree() const
         }
 
         const QString id = metaData.pluginId();
-        if (id.isEmpty() || modules.contains(id)) {
+        const QString displayName = metaData.name();
+        // System Settings uses KPluginMetaData::name() as the visible module
+        // label. A raw plugin ID is an implementation detail, not a user-facing
+        // fallback; if a metadata candidate has no display name, ignore it so a
+        // named candidate from another System Settings namespace can win.
+        if (id.isEmpty() || displayName.isEmpty() || modules.contains(id)) {
             continue;
         }
 
         PreferenceModule module;
         module.id = id;
-        module.name = metaData.name().isEmpty() ? id : metaData.name();
+        module.name = displayName;
         module.icon = metaData.iconName().isEmpty() ? QStringLiteral("preferences-system") : metaData.iconName();
         module.parent = parent;
         module.weight = metaData.value(QStringLiteral("X-KDE-Weight"), 100);
