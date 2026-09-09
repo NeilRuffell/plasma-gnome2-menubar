@@ -1,0 +1,30 @@
+name: Fedora build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:44
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf install -y \
+            git cmake ninja-build gcc-c++ extra-cmake-modules \
+            libplasma-devel kf6-kconfig-devel kf6-kcoreaddons-devel
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr
+
+      - name: Build
+        run: cmake --build build
