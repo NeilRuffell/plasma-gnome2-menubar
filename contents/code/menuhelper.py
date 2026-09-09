@@ -20,6 +20,58 @@ def emit(value) -> None:
     print(json.dumps(value, ensure_ascii=False))
 
 
+def data_roots() -> list[Path]:
+    home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+    data_dirs = os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":")
+    return [home, *[Path(d) for d in data_dirs if d]]
+
+
+def application_dirs() -> list[Path]:
+    return [root / "applications" for root in data_roots()]
+
+
+def read_desktop_file(path: Path) -> configparser.SectionProxy | None:
+    parser = configparser.ConfigParser(interpolation=None, strict=False)
+    parser.optionxform = str
+    try:
+        parser.read(path, encoding="utf-8")
+        if "Desktop Entry" not in parser:
+            return None
+        return parser["Desktop Entry"]
+    except (OSError, configparser.Error, UnicodeError):
+        return None
+
+
+def kcm_icon_map() -> dict[str, str]:
+    """Map KCM ids to theme icon names where KDE desktop metadata exposes them."""
+    icons: dict[str, str] = {}
+    search_dirs: list[Path] = []
+    for root in data_roots():
+        search_dirs.extend((root / "kservices6", root / "applications"))
+
+    for directory in search_dirs:
+        if not directory.is_dir():
+            continue
+        for path in directory.rglob("*.desktop"):
+            section = read_desktop_file(path)
+            if section is None:
+                continue
+            icon = section.get("Icon", "").strip()
+            if not icon:
+                continue
+
+            identifiers = {
+                path.stem,
+                section.get("X-KDE-PluginInfo-Name", "").strip(),
+                section.get("X-KDE-Library", "").strip(),
+            }
+            for identifier in identifiers:
+                if identifier:
+                    icons.setdefault(identifier, icon)
+
+    return icons
+
+
 def list_kcms() -> list[dict[str, str]]:
     try:
         result = subprocess.run(
@@ -32,6 +84,7 @@ def list_kcms() -> list[dict[str, str]]:
     except FileNotFoundError:
         return []
 
+    icons = kcm_icon_map()
     entries: list[dict[str, str]] = []
     seen: set[str] = set()
     for raw in result.stdout.splitlines():
@@ -42,7 +95,6 @@ def list_kcms() -> list[dict[str, str]]:
         # Current kcmshell6 output is normally: module_id - Human readable name
         match = re.match(r"^(\S+)\s+-\s+(.+)$", line)
         if not match:
-            # Tolerate distributions/versions that use a colon instead.
             match = re.match(r"^(\S+)\s*:\s*(.+)$", line)
         if not match:
             continue
@@ -51,16 +103,16 @@ def list_kcms() -> list[dict[str, str]]:
         if module_id in seen:
             continue
         seen.add(module_id)
-        entries.append({"id": module_id, "name": name})
+        entries.append(
+            {
+                "id": module_id,
+                "name": name,
+                "icon": icons.get(module_id, "preferences-system"),
+            }
+        )
 
     entries.sort(key=lambda item: item["name"].casefold())
     return entries
-
-
-def application_dirs() -> list[Path]:
-    home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
-    data_dirs = os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":")
-    return [home / "applications", *[Path(d) / "applications" for d in data_dirs if d]]
 
 
 def bool_value(section: configparser.SectionProxy, key: str) -> bool:
@@ -81,14 +133,8 @@ def list_admin_apps() -> list[dict[str, str]]:
     seen_names: set[str] = set()
 
     for path in desktop_files.values():
-        parser = configparser.ConfigParser(interpolation=None, strict=False)
-        parser.optionxform = str
-        try:
-            parser.read(path, encoding="utf-8")
-            if "Desktop Entry" not in parser:
-                continue
-            section = parser["Desktop Entry"]
-        except (OSError, configparser.Error, UnicodeError):
+        section = read_desktop_file(path)
+        if section is None:
             continue
 
         if section.get("Type", "") != "Application":
