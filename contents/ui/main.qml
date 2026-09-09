@@ -203,13 +203,16 @@ PlasmoidItem {
             if (!text || String(text).trim().length === 0) {
                 continue
             }
+
             const capturedRow = row
             addActionItem(menu, text, function() {
                 computerModel.trigger(capturedRow, "", null)
             }, true, modelIcon(computerModel, row))
         }
 
-        addSeparator(menu)
+        if (menu.count > 0) {
+            addSeparator(menu)
+        }
 
         const recentMenu = createSubmenu(menu, i18n("Recent Documents"), "document-open-recent")
         if (recentMenu) {
@@ -246,7 +249,11 @@ PlasmoidItem {
                 )
                 if (submenu) {
                     appendPreferenceNodes(submenu, node.children || [], depth + 1)
-                    menu.addMenu(submenu)
+                    if (submenu.count > 0) {
+                        menu.addMenu(submenu)
+                    } else {
+                        submenu.destroy()
+                    }
                 }
                 continue
             }
@@ -330,6 +337,7 @@ PlasmoidItem {
 
     function refreshDiscovery() {
         let pending = 2
+
         function completedOne() {
             pending -= 1
             if (pending === 0) {
@@ -456,8 +464,18 @@ PlasmoidItem {
         Layout.maximumWidth: implicitWidth
         Layout.minimumHeight: implicitHeight
 
+        property bool menuBarActive: false
+
         function anyTopMenuVisible() {
             return applicationsMenu.visible || placesMenu.visible || systemMenu.visible
+        }
+
+        function maybeDeactivateLater() {
+            Qt.callLater(function() {
+                if (!menuBarRoot.anyTopMenuVisible()) {
+                    menuBarRoot.menuBarActive = false
+                }
+            })
         }
 
         function closeOtherTopMenus(keep) {
@@ -473,6 +491,7 @@ PlasmoidItem {
         }
 
         function openApplicationsMenu() {
+            menuBarActive = true
             closeOtherTopMenus("applications")
             if (root.applicationsDirty || applicationsMenu.count === 0) {
                 root.rebuildApplications(applicationsMenu)
@@ -483,6 +502,7 @@ PlasmoidItem {
         }
 
         function openPlacesMenu() {
+            menuBarActive = true
             closeOtherTopMenus("places")
             if (root.placesDirty || placesMenu.count === 0) {
                 root.rebuildPlaces(placesMenu)
@@ -493,6 +513,7 @@ PlasmoidItem {
         }
 
         function openSystemMenu() {
+            menuBarActive = true
             closeOtherTopMenus("system")
             if (root.systemDirty || systemMenu.count === 0) {
                 root.rebuildSystem(systemMenu)
@@ -513,15 +534,18 @@ PlasmoidItem {
                 text: i18n("Applications")
                 display: PC3.AbstractButton.TextOnly
                 hoverEnabled: true
+
                 onClicked: {
                     if (applicationsMenu.visible) {
+                        menuBarRoot.menuBarActive = false
                         applicationsMenu.close()
                     } else {
                         menuBarRoot.openApplicationsMenu()
                     }
                 }
+
                 onHoveredChanged: {
-                    if (hovered && menuBarRoot.anyTopMenuVisible() && !applicationsMenu.visible) {
+                    if (hovered && menuBarRoot.menuBarActive && !applicationsMenu.visible) {
                         menuBarRoot.openApplicationsMenu()
                     }
                 }
@@ -530,6 +554,7 @@ PlasmoidItem {
                     id: applicationsMenu
                     popupType: QQC2.Popup.Window
                     height: Math.min(implicitHeight, root.maxMenuHeight)
+                    onClosed: menuBarRoot.maybeDeactivateLater()
                 }
             }
 
@@ -538,15 +563,18 @@ PlasmoidItem {
                 text: i18n("Places")
                 display: PC3.AbstractButton.TextOnly
                 hoverEnabled: true
+
                 onClicked: {
                     if (placesMenu.visible) {
+                        menuBarRoot.menuBarActive = false
                         placesMenu.close()
                     } else {
                         menuBarRoot.openPlacesMenu()
                     }
                 }
+
                 onHoveredChanged: {
-                    if (hovered && menuBarRoot.anyTopMenuVisible() && !placesMenu.visible) {
+                    if (hovered && menuBarRoot.menuBarActive && !placesMenu.visible) {
                         menuBarRoot.openPlacesMenu()
                     }
                 }
@@ -555,6 +583,7 @@ PlasmoidItem {
                     id: placesMenu
                     popupType: QQC2.Popup.Window
                     height: Math.min(implicitHeight, root.maxMenuHeight)
+                    onClosed: menuBarRoot.maybeDeactivateLater()
                 }
             }
 
@@ -563,15 +592,18 @@ PlasmoidItem {
                 text: i18n("System")
                 display: PC3.AbstractButton.TextOnly
                 hoverEnabled: true
+
                 onClicked: {
                     if (systemMenu.visible) {
+                        menuBarRoot.menuBarActive = false
                         systemMenu.close()
                     } else {
                         menuBarRoot.openSystemMenu()
                     }
                 }
+
                 onHoveredChanged: {
-                    if (hovered && menuBarRoot.anyTopMenuVisible() && !systemMenu.visible) {
+                    if (hovered && menuBarRoot.menuBarActive && !systemMenu.visible) {
                         menuBarRoot.openSystemMenu()
                     }
                 }
@@ -580,6 +612,7 @@ PlasmoidItem {
                     id: systemMenu
                     popupType: QQC2.Popup.Window
                     height: Math.min(implicitHeight, root.maxMenuHeight)
+                    onClosed: menuBarRoot.maybeDeactivateLater()
                 }
             }
         }
