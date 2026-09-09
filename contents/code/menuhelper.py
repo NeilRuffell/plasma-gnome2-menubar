@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Discovery/launch helper for the Plasma GNOME-2-style menubar.
 
-Applications, Places and session actions are handled directly by Plasma QML
-models. This helper discovers KDE System Settings modules/categories and XDG
-administration applications.
+Applications, Places and session actions are handled directly by Plasma QML.
+This helper discovers KDE System Settings modules/categories and XDG
+administration applications. It supports common Fedora and Debian/Ubuntu
+Qt 6 filesystem layouts.
 """
 
 from __future__ import annotations
@@ -23,36 +24,35 @@ def emit(value: Any) -> None:
     print(json.dumps(value, ensure_ascii=False))
 
 
-def data_roots() -> list[Path]:
-    """Return XDG data roots, always including the standard system roots."""
-    roots: list[Path] = []
+def _unique_existing(paths: list[Path]) -> list[Path]:
+    out: list[Path] = []
     seen: set[Path] = set()
-
-    def add(path: Path) -> None:
+    for path in paths:
         try:
             resolved = path.expanduser().resolve()
         except OSError:
             resolved = path.expanduser()
-        if resolved not in seen:
+        if resolved.exists() and resolved not in seen:
             seen.add(resolved)
-            roots.append(resolved)
+            out.append(resolved)
+    return out
 
-    add(Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")))
 
-    for item in os.environ.get("XDG_DATA_DIRS", "").split(os.pathsep):
-        if item:
-            add(Path(item))
-
-    # Do not trust a desktop session to have preserved the XDG defaults.
-    # KDE/System Settings packages on Debian/Ubuntu install here.
-    add(Path("/usr/local/share"))
-    add(Path("/usr/share"))
-
-    return roots
+def data_roots() -> list[Path]:
+    candidates: list[Path] = [
+        Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")),
+    ]
+    candidates += [
+        Path(item)
+        for item in os.environ.get("XDG_DATA_DIRS", "").split(os.pathsep)
+        if item
+    ]
+    candidates += [Path("/usr/local/share"), Path("/usr/share")]
+    return _unique_existing(candidates)
 
 
 def application_dirs() -> list[Path]:
-    return [root / "applications" for root in data_roots()]
+    return _unique_existing([root / "applications" for root in data_roots()])
 
 
 def read_desktop_file(path: Path) -> configparser.SectionProxy | None:
@@ -77,13 +77,16 @@ def integer_value(value: Any, default: int = 100) -> int:
 
 
 def qtplugininfo_executable() -> str | None:
-    candidates = (
+    candidates: list[str | None] = [
         shutil.which("qtplugininfo6"),
         shutil.which("qplugininfo6"),
         shutil.which("qtplugininfo"),
-        "/usr/bin/qtplugininfo6",
+        shutil.which("qtplugininfo-qt6"),
+        "/usr/lib64/qt6/bin/qtplugininfo",
+        "/usr/lib64/qt6/bin/qtplugininfo-qt6",
         "/usr/lib/qt6/bin/qtplugininfo",
-    )
+        "/usr/lib/qt6/bin/qtplugininfo-qt6",
+    ]
     for candidate in candidates:
         if candidate and Path(candidate).is_file():
             return str(candidate)
@@ -91,24 +94,16 @@ def qtplugininfo_executable() -> str | None:
 
 
 def qt_plugin_roots() -> list[Path]:
-    roots: list[Path] = []
-    seen: set[Path] = set()
-
-    def add(path: Path) -> None:
-        try:
-            resolved = path.resolve()
-        except OSError:
-            resolved = path
-        if resolved.is_dir() and resolved not in seen:
-            seen.add(resolved)
-            roots.append(resolved)
+    candidates: list[Path] = []
 
     for item in os.environ.get("QT_PLUGIN_PATH", "").split(os.pathsep):
         if item:
-            add(Path(item))
+            candidates.append(Path(item))
 
-    qtpaths = shutil.which("qtpaths6") or shutil.which("qtpaths")
-    if qtpaths:
+    for qtpaths_name in ("qtpaths6", "qtpaths"):
+        qtpaths = shutil.which(qtpaths_name)
+        if not qtpaths:
+            continue
         try:
             result = subprocess.run(
                 [qtpaths, "--plugin-dir"],
@@ -118,46 +113,36 @@ def qt_plugin_roots() -> list[Path]:
                 text=True,
             )
             if result.stdout.strip():
-                add(Path(result.stdout.strip()))
+                candidates.append(Path(result.stdout.strip()))
         except OSError:
             pass
 
-    # Debian/Ubuntu multiarch layouts, plus non-multiarch fallbacks.
-    for candidate in Path("/usr/lib").glob("*/qt6/plugins"):
-        add(candidate)
-    for candidate in Path("/usr/local/lib").glob("*/qt6/plugins"):
-        add(candidate)
-    add(Path("/usr/lib/qt6/plugins"))
-    add(Path("/usr/local/lib/qt6/plugins"))
-    add(Path.home() / ".local/lib/qt6/plugins")
+    candidates += [
+        Path("/usr/lib64/qt6/plugins"),
+        Path("/usr/local/lib64/qt6/plugins"),
+        Path("/usr/lib/qt6/plugins"),
+        Path("/usr/local/lib/qt6/plugins"),
+        Path.home() / ".local/lib/qt6/plugins",
+    ]
+    candidates += list(Path("/usr/lib").glob("*/qt6/plugins"))
+    candidates += list(Path("/usr/local/lib").glob("*/qt6/plugins"))
 
-    return roots
+    return [path for path in _unique_existing(candidates) if path.is_dir()]
 
 
 def systemsettings_plugin_files() -> list[Path]:
-    files: list[Path] = []
-    seen: set[Path] = set()
     namespaces = (
         Path("plasma/kcms/systemsettings"),
         Path("plasma/kcms/systemsettings_qwidgets"),
         Path("plasma/kcms"),
     )
-
-    for plugin_root in qt_plugin_roots():
+    candidates: list[Path] = []
+    for root in qt_plugin_roots():
         for namespace in namespaces:
-            directory = plugin_root / namespace
-            if not directory.is_dir():
-                continue
-            for path in directory.glob("*.so"):
-                try:
-                    resolved = path.resolve()
-                except OSError:
-                    resolved = path
-                if resolved not in seen:
-                    seen.add(resolved)
-                    files.append(resolved)
-
-    return files
+            directory = root / namespace
+            if directory.is_dir():
+                candidates += list(directory.glob("*.so"))
+    return [path for path in _unique_existing(candidates) if path.is_file()]
 
 
 def qt_plugin_metadata(path: Path, tool: str) -> dict[str, Any] | None:
@@ -193,30 +178,15 @@ def localized_json_string(obj: dict[str, Any], key: str) -> str:
 
 
 def category_directories() -> list[Path]:
-    directories: list[Path] = []
-    seen: set[Path] = set()
-
-    def add(path: Path) -> None:
-        try:
-            resolved = path.resolve()
-        except OSError:
-            resolved = path
-        if resolved.is_dir() and resolved not in seen:
-            seen.add(resolved)
-            directories.append(resolved)
-
-    # Explicit standard location used by current KDE System Settings packages.
-    add(Path("/usr/share/systemsettings/categories"))
-    add(Path("/usr/local/share/systemsettings/categories"))
-
-    for root in data_roots():
-        add(root / "systemsettings" / "categories")
-
-    return directories
+    candidates = [
+        Path("/usr/share/systemsettings/categories"),
+        Path("/usr/local/share/systemsettings/categories"),
+    ]
+    candidates += [root / "systemsettings" / "categories" for root in data_roots()]
+    return [path for path in _unique_existing(candidates) if path.is_dir()]
 
 
 def category_metadata() -> dict[str, dict[str, Any]]:
-    """Read KDE System Settings' installed category definitions."""
     categories: dict[str, dict[str, Any]] = {}
 
     for directory in category_directories():
@@ -251,7 +221,6 @@ def category_metadata() -> dict[str, dict[str, Any]]:
 
 
 def plugin_kcm_entries() -> dict[str, dict[str, Any]]:
-    """Read KCM metadata directly from KDE's compiled plugin metadata."""
     entries: dict[str, dict[str, Any]] = {}
     tool = qtplugininfo_executable()
     if not tool:
@@ -266,8 +235,7 @@ def plugin_kcm_entries() -> dict[str, dict[str, Any]]:
         if not isinstance(plugin, dict):
             plugin = {}
 
-        explicit_id = localized_json_string(plugin, "Id")
-        module_id = explicit_id or path.stem
+        module_id = localized_json_string(plugin, "Id") or path.stem
         if not module_id or module_id in entries:
             continue
 
@@ -276,8 +244,6 @@ def plugin_kcm_entries() -> dict[str, dict[str, Any]]:
             parent = raw.get("X-KDE-System-Settings-Parent-Category", "")
         parent = parent.strip() if isinstance(parent, str) else ""
 
-        # rootcategory is the System Settings landing page rather than a useful
-        # classic Preferences entry. lost-and-found is UI plumbing as well.
         if not parent or parent in {"rootcategory", "lost-and-found"}:
             continue
 
@@ -297,17 +263,10 @@ def plugin_kcm_entries() -> dict[str, dict[str, Any]]:
 def desktop_kcm_entries(
     existing: dict[str, dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
-    """Fallback to generated KCM .desktop launchers.
-
-    Generated launchers do not normally include category metadata, so they are
-    used only for modules whose compiled metadata could not be read.
-    """
     entries = dict(existing)
-
     desktop_files: dict[str, Path] = {}
+
     for directory in application_dirs():
-        if not directory.is_dir():
-            continue
         for path in directory.glob("*.desktop"):
             desktop_files.setdefault(path.name, path)
 
@@ -364,11 +323,8 @@ def desktop_kcm_entries(
 
 
 def preference_tree() -> list[dict[str, Any]]:
-    """Build the live KDE System Settings hierarchy for Preferences."""
     categories = category_metadata()
-    plugin_entries = plugin_kcm_entries()
-    modules = list(desktop_kcm_entries(plugin_entries).values())
-
+    modules = list(desktop_kcm_entries(plugin_kcm_entries()).values())
     if not modules:
         return []
 
@@ -441,8 +397,6 @@ def preference_tree() -> list[dict[str, Any]]:
 def list_admin_apps() -> list[dict[str, str]]:
     desktop_files: dict[str, Path] = {}
     for directory in application_dirs():
-        if not directory.is_dir():
-            continue
         for path in directory.rglob("*.desktop"):
             relative_id = str(path.relative_to(directory)).replace(os.sep, "-")
             desktop_files.setdefault(relative_id, path)
@@ -487,21 +441,10 @@ def list_admin_apps() -> list[dict[str, str]]:
 
 
 def launch_kcm(module_id: str) -> int:
-    command = shutil.which("kcmshell6")
-    if command:
-        try:
-            subprocess.Popen(
-                [command, module_id],
-                start_new_session=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return 0
-        except OSError:
-            pass
-
-    command = shutil.which("systemsettings")
-    if command:
+    for command_name in ("kcmshell6", "systemsettings"):
+        command = shutil.which(command_name)
+        if not command:
+            continue
         try:
             subprocess.Popen(
                 [command, module_id],
