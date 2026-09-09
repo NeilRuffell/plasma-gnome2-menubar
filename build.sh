@@ -2,14 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DIST="$ROOT/dist"
-OUT="$DIST/gnome2-menubar-plasma6.plasmoid"
+BUILD="$ROOT/build"
 
-mkdir -p "$DIST"
-rm -f "$OUT"
-(
-  cd "$ROOT"
-  zip -qr "$OUT" metadata.json contents
-)
+cmake -S "$ROOT" -B "$BUILD" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr
+cmake --build "$BUILD"
 
-echo "Built: $OUT"
+echo
+echo "Build complete. Install with: sudo cmake --install $BUILD"
