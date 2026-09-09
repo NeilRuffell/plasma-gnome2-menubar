@@ -88,6 +88,10 @@ private:
     void onMenuAboutToHide();
     void restoreCurrentMenuActions();
 
+    // Global Menu's top-level source menus are submenus of one root QMenu.
+    // Mirroring that hierarchy gives the persistent visible menu the same
+    // QWidget parent/ownership relationship as Plasma's implementation.
+    QPointer<QMenu> m_menuRoot;
     std::array<MenuState, 3> m_menus;
     int m_currentIndex = -1;
     bool m_showIcons = true;
