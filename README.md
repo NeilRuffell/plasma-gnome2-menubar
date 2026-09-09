@@ -10,7 +10,7 @@ The project stays KDE/Plasma-native. It does not run `mate-panel`, `gnome-panel`
 
 ## Architecture
 
-Version `0.9.0` is a native Plasma applet and deliberately follows Plasma's own **Global Menu** implementation for top-level menu presentation and switching.
+Version `0.9.1` is a native Plasma applet and deliberately follows Plasma's own **Global Menu** implementation for top-level menu presentation and switching.
 
 ### Menubar interaction and dropdowns
 
@@ -32,8 +32,8 @@ There is no `PC3.Menu`, Qt Quick `MenuBar`, custom hover timer, or alternate pop
 
 - **Applications** — KDE Kicker `RootModel`.
 - **Places** — KDE Kicker `ComputerModel`, backed by `KFilePlacesModel`; model roles distinguish actual places from ComputerModel's non-place entries.
-- **Recent Documents** — KDE Kicker `RecentUsageModel`.
-- **Preferences** — discovered in-process with KDE `KPluginMetaData`, KConfig, `KAuthorized`, runtime-platform/form-factor filtering, and the installed System Settings category metadata.
+- **Recent Documents** — KDE Kicker `RecentUsageModel`; visible filenames come from the model's `Qt.DisplayRole`.
+- **Preferences** — discovered in-process with KDE `KPluginMetaData`, KConfig, `KAuthorized`, runtime-platform/form-factor filtering, and the installed System Settings category metadata. Visible module labels come from KDE metadata display names; raw KCM plugin IDs are never shown as labels.
 - **Administration** — the live System subtree from the Kicker application hierarchy.
 - **Session actions** — KDE Kicker `SystemModel`.
 
@@ -70,7 +70,7 @@ sudo cmake --install build
 
 ### Important when upgrading from versions 0.8.x and earlier
 
-Older versions were installed as a user KPackage under the same plugin ID. A user-local copy shadows the compiled system applet, so remove the old package directory after installing 0.9.0:
+Older versions were installed as a user KPackage under the same plugin ID. A user-local copy shadows the compiled system applet, so remove the old package directory after installing 0.9.x:
 
 ```bash
 rm -rf ~/.local/share/plasma/plasmoids/org.local.plasma.gnome2menubar
