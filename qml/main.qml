@@ -53,6 +53,14 @@ PlasmoidItem {
         return token
     }
 
+    // QMenu interprets '&' as a mnemonic marker. All strings supplied by the
+    // KDE models here are display labels, so literal ampersands must be escaped
+    // before they are handed to QAction/QMenu. This preserves labels such as
+    // "Input & Output" and "Mouse & Touchpad" exactly.
+    function qMenuText(text) {
+        return String(text || "").replace(/&/g, "&&")
+    }
+
     function modelText(sourceModel, row) {
         try {
             return String(sourceModel.data(sourceModel.index(row, 0), Qt.DisplayRole) || "")
@@ -80,7 +88,7 @@ PlasmoidItem {
             const iconValue = modelIcon(sourceModel, row)
 
             if (childModel) {
-                const submenuHandle = Plasmoid.addSubmenu(topIndex, parentHandle, text, iconValue)
+                const submenuHandle = Plasmoid.addSubmenu(topIndex, parentHandle, qMenuText(text), iconValue)
                 if (submenuHandle >= 0) {
                     appendKickerModel(topIndex, submenuHandle, childModel, depth + 1)
                 }
@@ -88,7 +96,7 @@ PlasmoidItem {
                 Plasmoid.addSeparator(topIndex, parentHandle)
             } else {
                 const token = registerTarget(topIndex, sourceModel, row)
-                Plasmoid.addAction(topIndex, parentHandle, text, iconValue, token, true)
+                Plasmoid.addAction(topIndex, parentHandle, qMenuText(text), iconValue, token, true)
             }
         }
     }
@@ -104,7 +112,7 @@ PlasmoidItem {
                 const submenuHandle = Plasmoid.addSubmenu(
                     topIndex,
                     parentHandle,
-                    node.name || node.id || i18n("Other"),
+                    qMenuText(node.name || node.id || i18n("Other")),
                     node.icon || "preferences-system"
                 )
                 if (submenuHandle >= 0) {
@@ -116,7 +124,7 @@ PlasmoidItem {
                     Plasmoid.addAction(
                         topIndex,
                         parentHandle,
-                        node.name,
+                        qMenuText(node.name),
                         node.icon || "preferences-system",
                         "kcm:" + moduleId,
                         true
@@ -166,7 +174,7 @@ PlasmoidItem {
             Plasmoid.addAction(
                 topIndex,
                 0,
-                text,
+                qMenuText(text),
                 computerModel.data(index, Qt.DecorationRole),
                 token,
                 true
@@ -181,12 +189,12 @@ PlasmoidItem {
         const recentHandle = Plasmoid.addSubmenu(
             topIndex,
             0,
-            i18n("Recent Documents"),
+            qMenuText(i18n("Recent Documents")),
             "document-open-recent"
         )
 
         if (recentDocumentsModel.count === 0) {
-            Plasmoid.addAction(topIndex, recentHandle, i18n("No Recent Documents"), "", "", false)
+            Plasmoid.addAction(topIndex, recentHandle, qMenuText(i18n("No Recent Documents")), "", "", false)
         } else {
             for (let row = 0; row < recentDocumentsModel.count; ++row) {
                 // RecentUsageModel is a ForwardingModel whose source is not an
@@ -197,7 +205,7 @@ PlasmoidItem {
                 Plasmoid.addAction(
                     topIndex,
                     recentHandle,
-                    text,
+                    qMenuText(text),
                     modelIcon(recentDocumentsModel, row),
                     token,
                     true
@@ -216,7 +224,7 @@ PlasmoidItem {
         const preferencesHandle = Plasmoid.addSubmenu(
             topIndex,
             0,
-            i18n("Preferences"),
+            qMenuText(i18n("Preferences")),
             "preferences-system"
         )
         appendPreferenceNodes(topIndex, preferencesHandle, kcmEntries, 0)
@@ -224,7 +232,7 @@ PlasmoidItem {
         const administrationHandle = Plasmoid.addSubmenu(
             topIndex,
             0,
-            i18n("Administration"),
+            qMenuText(i18n("Administration")),
             "preferences-system-administration"
         )
         const systemApplicationsModel = findApplicationsCategoryModel(i18n("System"))
@@ -237,27 +245,42 @@ PlasmoidItem {
         for (let row = 0; row < systemActionsModel.count; ++row) {
             const text = systemActionsModel.labelForRow(row)
             const token = registerTarget(topIndex, systemActionsModel, row)
-            Plasmoid.addAction(topIndex, 0, text, modelIcon(systemActionsModel, row), token, true)
+            Plasmoid.addAction(topIndex, 0, qMenuText(text), modelIcon(systemActionsModel, row), token, true)
         }
 
         systemDirty = false
     }
 
-    function prepareMenu(index) {
-        // While a top menu is visible, its QAction set lives temporarily in
-        // the shared visible QMenu. Rebuild only inactive source menus; this is
-        // the same ownership rule Plasma Global Menu follows.
-        if (Plasmoid.currentIndex === index) {
-            return
-        }
-
-        if (index === 0 && applicationsDirty) {
+    // Keep all inactive source QMenus populated. Plasma Global Menu switches
+    // between already-existing source menus; it does not construct menu trees
+    // inside the hover activation path. If an active menu changes underneath
+    // us, leave it dirty and rebuild it immediately after it becomes inactive.
+    function refreshDirtyMenus() {
+        if (applicationsDirty && Plasmoid.currentIndex !== 0) {
             rebuildApplications()
-        } else if (index === 1 && placesDirty) {
+        }
+        if (placesDirty && Plasmoid.currentIndex !== 1) {
             rebuildPlaces()
-        } else if (index === 2 && systemDirty) {
+        }
+        if (systemDirty && Plasmoid.currentIndex !== 2) {
             rebuildSystem()
         }
+    }
+
+    function markApplicationsDirty() {
+        applicationsDirty = true
+        systemDirty = true
+        Qt.callLater(root.refreshDirtyMenus)
+    }
+
+    function markPlacesDirty() {
+        placesDirty = true
+        Qt.callLater(root.refreshDirtyMenus)
+    }
+
+    function markSystemDirty() {
+        systemDirty = true
+        Qt.callLater(root.refreshDirtyMenus)
     }
 
     Kicker.RootModel {
@@ -275,48 +298,44 @@ PlasmoidItem {
         showRecentDocs: false
         showPowerSession: false
 
-        onRefreshed: {
-            root.applicationsDirty = true
-            root.systemDirty = true
-        }
+        onRefreshed: root.markApplicationsDirty()
     }
 
     Kicker.ComputerModel {
         id: computerModel
         appletInterface: root
         systemApplications: []
-        onCountChanged: root.placesDirty = true
+        onCountChanged: root.markPlacesDirty()
     }
 
     Kicker.RecentUsageModel {
         id: recentDocumentsModel
         shownItems: Kicker.RecentUsageModel.OnlyDocs
         ordering: Kicker.RecentUsageModel.Recent
-        onCountChanged: root.placesDirty = true
+        onCountChanged: root.markPlacesDirty()
     }
 
     Kicker.SystemModel {
         id: systemActionsModel
-        onCountChanged: root.systemDirty = true
+        onCountChanged: root.markSystemDirty()
     }
 
     Component.onCompleted: {
         Plasmoid.showIcons = Plasmoid.configuration.showIcons
         kcmEntries = Plasmoid.preferenceTree()
+        applicationsDirty = true
+        placesDirty = true
         systemDirty = true
+        refreshDirtyMenus()
     }
 
     Connections {
         target: Plasmoid
 
-        function onRequestActivateIndex(index) {
-            if (index < 0 || index >= buttonRepeater.count) {
-                return
-            }
-            const button = buttonRepeater.itemAt(index)
-            if (button) {
-                button.activated()
-            }
+        function onCurrentIndexChanged() {
+            // Do not put rebuild work on the native menu-switching event itself.
+            // Reconcile any source menu that became inactive on the next turn.
+            Qt.callLater(root.refreshDirtyMenus)
         }
 
         function onActionTriggered(actionId) {
@@ -340,11 +359,17 @@ PlasmoidItem {
             root.applicationsDirty = true
             root.placesDirty = true
             root.systemDirty = true
+            Qt.callLater(root.refreshDirtyMenus)
         }
     }
 
     fullRepresentation: GridLayout {
         id: buttonGrid
+
+        // Match Plasma Global Menu's host state while a native menu is open.
+        Plasmoid.status: Plasmoid.currentIndex > -1
+            ? PlasmaCore.Types.NeedsAttentionStatus
+            : PlasmaCore.Types.ActiveStatus
 
         LayoutMirroring.enabled: Application.layoutDirection === Qt.RightToLeft
         Layout.minimumWidth: implicitWidth
@@ -359,6 +384,20 @@ PlasmoidItem {
             property: "buttonGrid"
             value: buttonGrid
             restoreMode: Binding.RestoreNone
+        }
+
+        Connections {
+            target: Plasmoid
+
+            // Deliberately mirrors Plasma Global Menu: while QMenu owns the
+            // mouse grab, the C++ event filter resolves the hovered panel item
+            // and asks QML to activate that already-populated menu.
+            function onRequestActivateIndex(index) {
+                const button = buttonRepeater.itemAt(index)
+                if (button) {
+                    button.activated()
+                }
+            }
         }
 
         Repeater {
@@ -377,10 +416,9 @@ PlasmoidItem {
                 down: Plasmoid.currentIndex === index
                 menuIsOpen: Plasmoid.currentIndex !== -1
 
-                onActivated: {
-                    root.prepareMenu(index)
-                    Plasmoid.trigger(this, index)
-                }
+                // No menu construction here. This is now only the same native
+                // active-index trigger used by Plasma Global Menu.
+                onActivated: Plasmoid.trigger(this, index)
             }
         }
 
