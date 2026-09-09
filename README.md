@@ -10,14 +10,16 @@ The widget stays KDE/Plasma-native. It does **not** run `mate-panel`, `gnome-pan
 
 ## Current status
 
-Early Plasma 6 implementation (`0.1.0`). Applications, Places, Recent Documents, KDE settings modules, system/admin applications, and session actions are discovered dynamically from the current Plasma system.
+Early Plasma 6 implementation (`0.4.0`). Applications, Places, Recent Documents, KDE settings modules, system/admin applications, and session actions are discovered dynamically from the current Plasma system.
+
+The three top-level menus also behave like a traditional menubar: after one menu is open, moving the pointer across **Applications / Places / System** switches the active menu without another click.
 
 ## Dynamic data sources
 
 - **Applications** — KDE Kicker `RootModel`, the same application-menu infrastructure used by Plasma launchers.
 - **Places** — KDE Kicker `ComputerModel`, backed by KDE's `KFilePlacesModel` for bookmarks, devices, and locations.
 - **Recent Documents** — KDE Kicker `RecentUsageModel`.
-- **Preferences** — detected from installed KDE KCM modules using `kcmshell6 --list`.
+- **Preferences** — Plasma System Settings' own module list plus the compiled KCM plugin metadata and `/usr/share/systemsettings/categories` hierarchy.
 - **Administration** — detected from installed XDG `.desktop` applications in the `System` category.
 - **Session actions** — KDE Kicker `SystemModel`, exposing the actions Plasma reports as valid, such as Lock, Log Out, Switch User, Suspend, Hibernate, Restart, and Shut Down.
 
@@ -25,8 +27,10 @@ Early Plasma 6 implementation (`0.1.0`). Applications, Places, Recent Documents,
 
 - KDE Plasma 6
 - `python3`
+- `systemsettings`
 - `kcmshell6`
 - `gio`
+- Qt 6 `qtplugininfo` (on Debian/Ubuntu/Kubuntu: package `qt6-tools-dev-tools`)
 - `zip` (to build the `.plasmoid` archive)
 - Plasma's Kicker QML module
 
@@ -85,6 +89,14 @@ Places
 
 System
 ├── Preferences
+│   ├── Appearance & Style
+│   ├── Workspace
+│   ├── Personalization
+│   ├── Apps & Windows
+│   ├── Security & Privacy
+│   ├── Network
+│   ├── Input & Output
+│   └── System
 ├── Administration
 ├──────────────
 └── Plasma session/power actions
