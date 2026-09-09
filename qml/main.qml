@@ -9,8 +9,11 @@ import QtQuick.Layouts
 import QtQml
 
 import org.kde.kcmutils as KCMUtils
+import org.kde.kirigami as Kirigami
+import org.kde.plasma.components as PlasmaComponents3
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
+import org.kde.plasma.private.keyboardindicator as KeyboardIndicator
 import org.kde.plasma.private.kicker as Kicker
 import plasma.applet.org.local.plasma.gnome2menubar
 
@@ -366,10 +369,13 @@ PlasmoidItem {
     fullRepresentation: GridLayout {
         id: buttonGrid
 
-        // Match Plasma Global Menu's host state while a native menu is open.
-        Plasmoid.status: Plasmoid.currentIndex > -1
-            ? PlasmaCore.Types.NeedsAttentionStatus
-            : PlasmaCore.Types.ActiveStatus
+        // Keep the same status transitions as Global Menu FullView.
+        Plasmoid.status: {
+            if (Plasmoid.currentIndex > -1 && buttonRepeater.count > 0) {
+                return PlasmaCore.Types.NeedsAttentionStatus
+            }
+            return buttonRepeater.count > 0 ? PlasmaCore.Types.ActiveStatus : PlasmaCore.Types.HiddenStatus
+        }
 
         LayoutMirroring.enabled: Application.layoutDirection === Qt.RightToLeft
         Layout.minimumWidth: implicitWidth
@@ -392,8 +398,20 @@ PlasmoidItem {
             // Deliberately mirrors Plasma Global Menu: while QMenu owns the
             // mouse grab, the C++ event filter resolves the hovered panel item
             // and asks QML to activate that already-populated menu.
-            function onRequestActivateIndex(index) {
+            function onRequestActivateIndex(index: int) {
                 const button = buttonRepeater.itemAt(index)
+                if (button) {
+                    button.activated()
+                }
+            }
+        }
+
+        // Global Menu also forwards generic applet activation to its first
+        // menubar item. Keep the same host-level activation behavior.
+        Connections {
+            target: Plasmoid
+            function onActivated() {
+                const button = buttonRepeater.itemAt(0)
                 if (button) {
                     button.activated()
                 }
@@ -413,12 +431,20 @@ PlasmoidItem {
                 Layout.fillWidth: root.vertical
                 Layout.fillHeight: !root.vertical
                 text: modelData
+                Kirigami.MnemonicData.active: altState.pressed
+
                 down: Plasmoid.currentIndex === index
                 menuIsOpen: Plasmoid.currentIndex !== -1
 
                 // No menu construction here. This is now only the same native
                 // active-index trigger used by Plasma Global Menu.
                 onActivated: Plasmoid.trigger(this, index)
+
+                // Same mnemonic-state source used by Plasma Global Menu.
+                KeyboardIndicator.KeyState {
+                    id: altState
+                    key: Qt.Key_Alt
+                }
             }
         }
 
