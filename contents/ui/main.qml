@@ -76,6 +76,17 @@ PlasmoidItem {
         }
     }
 
+    function modelText(sourceModel, row) {
+        if (!sourceModel) {
+            return ""
+        }
+        try {
+            return sourceModel.data(sourceModel.index(row, 0), Qt.DisplayRole) || ""
+        } catch (e) {
+            return ""
+        }
+    }
+
     function modelIcon(sourceModel, row) {
         if (!Plasmoid.configuration.showIcons || !sourceModel) {
             return ""
@@ -189,12 +200,12 @@ PlasmoidItem {
         clearMenu(menu)
 
         let firstPlace = 0
-        if (computerModel.count > 0 && computerModel.labelForRow(0) === i18n("Show KRunner")) {
+        if (computerModel.count > 0 && modelText(computerModel, 0) === i18n("Show KRunner")) {
             firstPlace = 1
         }
 
         for (let row = firstPlace; row < computerModel.count; ++row) {
-            const text = computerModel.labelForRow(row)
+            const text = modelText(computerModel, row)
             if (!text || String(text).trim().length === 0) {
                 continue
             }
@@ -423,6 +434,52 @@ PlasmoidItem {
         }
     }
 
+    function anyTopMenuVisible() {
+        return applicationsMenu.visible || placesMenu.visible || systemMenu.visible
+    }
+
+    function closeOtherTopMenus(keep) {
+        if (keep !== "applications" && applicationsMenu.visible) {
+            applicationsMenu.close()
+        }
+        if (keep !== "places" && placesMenu.visible) {
+            placesMenu.close()
+        }
+        if (keep !== "system" && systemMenu.visible) {
+            systemMenu.close()
+        }
+    }
+
+    function openApplicationsMenu() {
+        closeOtherTopMenus("applications")
+        if (root.applicationsDirty || applicationsMenu.count === 0) {
+            root.rebuildApplications(applicationsMenu)
+        }
+        if (!applicationsMenu.visible) {
+            applicationsMenu.popup(applicationsButton, 0, applicationsButton.height)
+        }
+    }
+
+    function openPlacesMenu() {
+        closeOtherTopMenus("places")
+        if (root.placesDirty || placesMenu.count === 0) {
+            root.rebuildPlaces(placesMenu)
+        }
+        if (!placesMenu.visible) {
+            placesMenu.popup(placesButton, 0, placesButton.height)
+        }
+    }
+
+    function openSystemMenu() {
+        closeOtherTopMenus("system")
+        if (root.systemDirty || systemMenu.count === 0) {
+            root.rebuildSystem(systemMenu)
+        }
+        if (!systemMenu.visible) {
+            systemMenu.popup(systemButton, 0, systemButton.height)
+        }
+    }
+
     Connections {
         target: Plasmoid.configuration
         function onShowIconsChanged() {
@@ -461,11 +518,18 @@ PlasmoidItem {
                 id: applicationsButton
                 text: i18n("Applications")
                 display: PC3.AbstractButton.TextOnly
+                hoverEnabled: true
                 onClicked: {
-                    if (root.applicationsDirty || applicationsMenu.count === 0) {
-                        root.rebuildApplications(applicationsMenu)
+                    if (applicationsMenu.visible) {
+                        applicationsMenu.close()
+                    } else {
+                        root.openApplicationsMenu()
                     }
-                    applicationsMenu.popup(applicationsButton, 0, applicationsButton.height)
+                }
+                onHoveredChanged: {
+                    if (hovered && root.anyTopMenuVisible() && !applicationsMenu.visible) {
+                        root.openApplicationsMenu()
+                    }
                 }
 
                 PC3.Menu {
@@ -479,11 +543,18 @@ PlasmoidItem {
                 id: placesButton
                 text: i18n("Places")
                 display: PC3.AbstractButton.TextOnly
+                hoverEnabled: true
                 onClicked: {
-                    if (root.placesDirty || placesMenu.count === 0) {
-                        root.rebuildPlaces(placesMenu)
+                    if (placesMenu.visible) {
+                        placesMenu.close()
+                    } else {
+                        root.openPlacesMenu()
                     }
-                    placesMenu.popup(placesButton, 0, placesButton.height)
+                }
+                onHoveredChanged: {
+                    if (hovered && root.anyTopMenuVisible() && !placesMenu.visible) {
+                        root.openPlacesMenu()
+                    }
                 }
 
                 PC3.Menu {
@@ -497,11 +568,18 @@ PlasmoidItem {
                 id: systemButton
                 text: i18n("System")
                 display: PC3.AbstractButton.TextOnly
+                hoverEnabled: true
                 onClicked: {
-                    if (root.systemDirty || systemMenu.count === 0) {
-                        root.rebuildSystem(systemMenu)
+                    if (systemMenu.visible) {
+                        systemMenu.close()
+                    } else {
+                        root.openSystemMenu()
                     }
-                    systemMenu.popup(systemButton, 0, systemButton.height)
+                }
+                onHoveredChanged: {
+                    if (hovered && root.anyTopMenuVisible() && !systemMenu.visible) {
+                        root.openSystemMenu()
+                    }
                 }
 
                 PC3.Menu {
