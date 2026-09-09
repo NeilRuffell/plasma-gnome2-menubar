@@ -1,10 +1,8 @@
 /*
-    SPDX-FileCopyrightText: 2020 Carson Black <uhhadd@gmail.com>
-    SPDX-License-Identifier: GPL-2.0-or-later
-
-    Derived directly from Plasma's Global Menu applet MenuDelegate.qml.
-    Keeping this delegate aligned with Global Menu is intentional.
-*/
+ * SPDX-FileCopyrightText: 2020 Carson Black <uhhadd@gmail.com>
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 import QtQuick
 import QtQuick.Controls
@@ -20,12 +18,21 @@ AbstractButton {
 
     signal activated()
 
+    // QMenu opens on press, so we'll replicate that here
     hoverEnabled: true
 
-    // This is the same front-end behavior used by Plasma's Global Menu. While
-    // a native QMenu owns the pointer grab, the C++ backend's event filter also
-    // forwards mouse movement over the other panel buttons.
+    // This will trigger even if hoverEnabled has just became true and the
+    // mouse cursor is already hovering.
+    //
+    // In practice, this never works, at least on X11: when menuIsOpen the
+    // hover event would not be delivered. Instead we rely on
+    // plasmoid.requestActivateIndex signal to filter
+    // QEvent::MouseMove events and tell us when to change the index.
     onHoveredChanged: if (hovered && menuIsOpen) { activated(); }
+
+    // You don't actually have to "close" the menu via click/pressed handlers.
+    // Instead, the menu will be closed automatically, as by any
+    // other "outside of the menu" click event.
     onPressed: activated()
 
     enum State {
@@ -35,6 +42,7 @@ AbstractButton {
     }
 
     property int menuState: {
+        // can't trust hovered state while QMenu is grabbing mouse pointer.
         if (down) {
             return MenuDelegate.State.Down;
         } else if (hovered && !menuIsOpen) {
@@ -68,8 +76,6 @@ AbstractButton {
         textFormat: Text.StyledText
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
-        color: controlRoot.menuState === MenuDelegate.State.Rest
-            ? Kirigami.Theme.textColor
-            : Kirigami.Theme.highlightedTextColor
+        color: controlRoot.menuState === MenuDelegate.State.Rest ? Kirigami.Theme.textColor : Kirigami.Theme.highlightedTextColor
     }
 }
