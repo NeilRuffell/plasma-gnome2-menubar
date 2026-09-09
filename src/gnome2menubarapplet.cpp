@@ -101,13 +101,16 @@ bool preferenceLess(const QVariant &left, const QVariant &right)
 Gnome2MenuBarApplet::Gnome2MenuBarApplet(QObject *parent, const KPluginMetaData &data, const QVariantList &args)
     : Plasma::Applet(parent, data, args)
 {
-    // Plasma Global Menu's File/Edit/View source menus are submenus of one
-    // imported root QMenu. Reproduce that QWidget ownership hierarchy here so
-    // the persistent visible popup can use the same source-menu parent.
+    // DBusMenuImporter creates a parentless root QMenu. Each top-level menu is
+    // a child QMenu, while the QAction that points at it is owned by the root.
+    // Do the same here instead of QMenu::addMenu(), whose default menuAction is
+    // owned by the child menu and therefore has a different QObject graph.
     m_menuRoot = new QMenu;
     for (MenuState &state : m_menus) {
         state.root = new QMenu(m_menuRoot);
-        m_menuRoot->addMenu(state.root);
+        auto *menuAction = new QAction(m_menuRoot);
+        menuAction->setMenu(state.root);
+        m_menuRoot->addAction(menuAction);
         state.handles.insert(0, state.root);
     }
 }
@@ -258,12 +261,19 @@ int Gnome2MenuBarApplet::addSubmenu(int topIndex, int parentHandle, const QStrin
     MenuState &state = m_menus.at(static_cast<std::size_t>(topIndex));
     const int handle = state.nextHandle++;
 
-    auto *submenu = new QMenu(text, parentMenu);
+    // Match DBusMenuImporterPrivate::createAction(): the action is owned by the
+    // parent menu, the submenu is also parented to that menu, and QAction::setMenu
+    // makes that parent-owned action the submenu's override menuAction.
+    auto *submenu = new QMenu(parentMenu);
+    auto *submenuAction = new QAction(parentMenu);
+    submenuAction->setText(text);
     const QIcon menuIcon = iconFromVariant(icon);
     if (!menuIcon.isNull()) {
-        submenu->setIcon(menuIcon);
+        submenuAction->setIcon(menuIcon);
     }
-    parentMenu->addMenu(submenu);
+    submenuAction->setMenu(submenu);
+    parentMenu->addAction(submenuAction);
+
     state.handles.insert(handle, submenu);
     return handle;
 }
