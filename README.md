@@ -10,7 +10,7 @@ The project stays KDE/Plasma-native. It does not run `mate-panel`, `gnome-panel`
 
 ## Architecture
 
-Version `0.9.1` is a native Plasma applet and deliberately follows Plasma's own **Global Menu** implementation for top-level menu presentation and switching.
+Version `0.9.2` is a native Plasma applet and deliberately follows Plasma's own **Global Menu** implementation for top-level menu presentation and switching.
 
 ### Menubar interaction and dropdowns
 
@@ -21,12 +21,16 @@ The C++ backend follows `plasma-workspace/applets/appmenu/appmenuapplet.cpp`:
 - each heading has a source `QMenu`; its `QAction`s are transferred into the persistent visible menu when that heading becomes active and restored when switching or closing;
 - when another heading becomes active, the existing visible `QMenu` is **moved and repopulated**, not closed and replaced by a second popup;
 - the visible `QMenu` installs the same mouse-move event-filter bridge used by Global Menu, because the native menu owns the pointer grab while open;
+- source menus stay populated while inactive, so hover switching performs no menu-tree construction in the activation path;
+- while a menu is open, the applet uses Plasma Global Menu's `NeedsAttentionStatus` host state;
 - the same mouse-ungrab workaround, transient-parent handling, screen-boundary clamping, and `_breeze_menu_seamless_edges` property used by Global Menu are retained;
 - left/right keyboard movement uses the same active-index bridge.
 
 The panel headings use `qml/MenuDelegate.qml`, derived directly from Plasma Global Menu's delegate and the same `widgets/menubaritem` Plasma theme asset. The GridLayout also follows the Global Menu layout: zero spacing, RTL mirroring, panel-orientation flow, and the same zero-size filler item.
 
 There is no `PC3.Menu`, Qt Quick `MenuBar`, custom hover timer, or alternate popup state machine in the active implementation.
+
+Qt Widgets treats `&` in `QAction`/`QMenu` text as a mnemonic marker. KDE model labels are display strings, so literal ampersands are escaped when crossing into the native menu layer; labels such as `Input & Output`, `Appearance & Style`, and `Mouse & Touchpad` therefore display unchanged.
 
 ### Menu data
 
