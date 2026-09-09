@@ -19,11 +19,10 @@ PlasmoidItem {
 
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
 
-    // Kicker::UrlRole from plasma-workspace/applets/kicker/actionlist.h.
-    // ComputerModel gives this role only to actual KDE Places rows; KRunner
-    // and optional system application rows are therefore excluded without
-    // relying on translated labels or icon-name heuristics.
-    readonly property int kickerUrlRole: Qt.UserRole + 10
+    // Kicker::GroupRole from plasma-workspace/applets/kicker/actionlist.h.
+    // ComputerModel explicitly assigns its non-place rows to the translated
+    // "Applications" group; KFilePlaces rows forward their real Places group.
+    readonly property int kickerGroupRole: Qt.UserRole + 2
 
     preferredRepresentation: fullRepresentation
     Plasmoid.constraintHints: Plasmoid.CanFillArea
@@ -153,8 +152,8 @@ PlasmoidItem {
         let addedPlaces = 0
         for (let row = 0; row < computerModel.count; ++row) {
             const index = computerModel.index(row, 0)
-            const placeUrl = computerModel.data(index, root.kickerUrlRole)
-            if (!placeUrl || String(placeUrl).length === 0) {
+            const groupName = String(computerModel.data(index, root.kickerGroupRole) || "")
+            if (groupName === i18n("Applications")) {
                 continue
             }
 
