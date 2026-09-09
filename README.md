@@ -10,23 +10,27 @@ The project stays KDE/Plasma-native. It does not run `mate-panel`, `gnome-panel`
 
 ## Architecture
 
-Version `0.9.2` is a native Plasma applet and deliberately follows Plasma's own **Global Menu** implementation for top-level menu presentation and switching.
+Version `0.9.3` is a native Plasma applet and deliberately follows Plasma's own **Global Menu** implementation for top-level menu presentation and switching.
 
 ### Menubar interaction and dropdowns
 
-The C++ backend follows `plasma-workspace/applets/appmenu/appmenuapplet.cpp`:
+The C++ backend follows `plasma-workspace/applets/appmenu/appmenuapplet.cpp` from Plasma 6.6.5:
 
 - the visible dropdown is a real Qt Widgets **`QMenu`**, the same menu foundation used by Plasma Global Menu;
 - a single persistent visible `QMenu` remains alive while the pointer moves between **Applications / Places / System**;
-- each heading has a source `QMenu`; its `QAction`s are transferred into the persistent visible menu when that heading becomes active and restored when switching or closing;
+- the three source menus are child `QMenu`s of one parentless root `QMenu`, matching the QWidget ownership hierarchy produced for Global Menu by `DBusMenuImporter`;
+- the persistent visible menu is created with the source menu's QWidget parent, exactly as Global Menu creates `m_currentMenu`;
+- each heading has a source `QMenu`; its `QAction`s are transferred into the persistent visible menu when that heading becomes active;
+- switching headings returns the current actions to the previous source and transfers the next source's actions into the same visible menu;
+- **closing the popup does not remove/reinsert its actions inside `aboutToHide`**. As in Global Menu, `aboutToHide` only restores the source menu's `menuAction` relationship and clears the active index. This preserves Qt's native outside-click / mouse-replay lifecycle;
 - when another heading becomes active, the existing visible `QMenu` is **moved and repopulated**, not closed and replaced by a second popup;
 - the visible `QMenu` installs the same mouse-move event-filter bridge used by Global Menu, because the native menu owns the pointer grab while open;
 - source menus stay populated while inactive, so hover switching performs no menu-tree construction in the activation path;
 - while a menu is open, the applet uses Plasma Global Menu's `NeedsAttentionStatus` host state;
-- the same mouse-ungrab workaround, transient-parent handling, screen-boundary clamping, and `_breeze_menu_seamless_edges` property used by Global Menu are retained;
+- the same mouse-ungrab workaround, transient-parent handling, screen-boundary clamping, `_breeze_menu_seamless_edges` property, and top-panel popup offset used by Global Menu are retained;
 - left/right keyboard movement uses the same active-index bridge.
 
-The panel headings use `qml/MenuDelegate.qml`, derived directly from Plasma Global Menu's delegate and the same `widgets/menubaritem` Plasma theme asset. The GridLayout also follows the Global Menu layout: zero spacing, RTL mirroring, panel-orientation flow, and the same zero-size filler item.
+`qml/MenuDelegate.qml` is aligned with Plasma 6.6.5 Global Menu's delegate, including the same `widgets/menubaritem` Plasma theme asset and mnemonic state handling. The GridLayout also follows Global Menu: zero spacing, RTL mirroring, panel-orientation flow, status handling, generic applet activation forwarding, and the same zero-size filler item.
 
 There is no `PC3.Menu`, Qt Quick `MenuBar`, custom hover timer, or alternate popup state machine in the active implementation.
 
