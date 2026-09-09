@@ -8,6 +8,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 import QtQuick.Window
+import QtQml.Models
 
 import org.kde.plasma.components as PC3
 import org.kde.plasma.plasma5support as Plasma5Support
@@ -23,7 +24,6 @@ PlasmoidItem {
     property var adminEntries: []
     property bool discoveryReady: false
     property bool applicationsDirty: true
-    property bool placesDirty: true
     property bool systemDirty: true
 
     readonly property real maxMenuHeight: Math.max(160, Screen.desktopAvailableHeight - 24)
@@ -67,17 +67,6 @@ PlasmoidItem {
                 continue
             }
             break
-        }
-    }
-
-    function modelText(sourceModel, row) {
-        if (!sourceModel) {
-            return ""
-        }
-        try {
-            return sourceModel.data(sourceModel.index(row, 0), Qt.DisplayRole) || ""
-        } catch (e) {
-            return ""
         }
     }
 
@@ -188,49 +177,6 @@ PlasmoidItem {
         clearMenu(menu)
         appendKickerModel(menu, applicationsModel, 0)
         applicationsDirty = false
-    }
-
-    function rebuildPlaces(menu) {
-        clearMenu(menu)
-
-        let firstPlace = 0
-        if (computerModel.count > 0 && modelText(computerModel, 0) === i18n("Show KRunner")) {
-            firstPlace = 1
-        }
-
-        for (let row = firstPlace; row < computerModel.count; ++row) {
-            const text = modelText(computerModel, row)
-            if (!text || String(text).trim().length === 0) {
-                continue
-            }
-
-            const capturedRow = row
-            addActionItem(menu, text, function() {
-                computerModel.trigger(capturedRow, "", null)
-            }, true, modelIcon(computerModel, row))
-        }
-
-        if (menu.count > 0) {
-            addSeparator(menu)
-        }
-
-        const recentMenu = createSubmenu(menu, i18n("Recent Documents"), "document-open-recent")
-        if (recentMenu) {
-            if (recentDocumentsModel.count === 0) {
-                addActionItem(recentMenu, i18n("No Recent Documents"), null, false, "")
-            } else {
-                for (let row = 0; row < recentDocumentsModel.count; ++row) {
-                    const text = recentDocumentsModel.labelForRow(row)
-                    const capturedRow = row
-                    addActionItem(recentMenu, text, function() {
-                        recentDocumentsModel.trigger(capturedRow, "", null)
-                    }, true, modelIcon(recentDocumentsModel, row))
-                }
-            }
-            menu.addMenu(recentMenu)
-        }
-
-        placesDirty = false
     }
 
     function appendPreferenceNodes(menu, nodes, depth) {
@@ -385,14 +331,12 @@ PlasmoidItem {
         id: computerModel
         appletInterface: root
         systemApplications: []
-        onCountChanged: root.placesDirty = true
     }
 
     Kicker.RecentUsageModel {
         id: recentDocumentsModel
         shownItems: Kicker.RecentUsageModel.OnlyDocs
         ordering: Kicker.RecentUsageModel.Recent
-        onCountChanged: root.placesDirty = true
     }
 
     Kicker.SystemModel {
@@ -440,7 +384,6 @@ PlasmoidItem {
         target: Plasmoid.configuration
         function onShowIconsChanged() {
             root.applicationsDirty = true
-            root.placesDirty = true
             root.systemDirty = true
         }
     }
@@ -448,7 +391,7 @@ PlasmoidItem {
     Component.onCompleted: refreshDiscovery()
 
     Timer {
-        interval: 30000
+        interval: 300000
         repeat: true
         running: true
         onTriggered: root.refreshDiscovery()
@@ -465,17 +408,43 @@ PlasmoidItem {
         Layout.minimumHeight: implicitHeight
 
         property bool menuBarActive: false
+        property bool switchingMenus: false
+        property string activeMenuName: ""
 
         function anyTopMenuVisible() {
             return applicationsMenu.visible || placesMenu.visible || systemMenu.visible
         }
 
-        function maybeDeactivateLater() {
-            Qt.callLater(function() {
-                if (!menuBarRoot.anyTopMenuVisible()) {
-                    menuBarRoot.menuBarActive = false
-                }
-            })
+        function anyTopButtonHovered() {
+            return applicationsButton.hovered || placesButton.hovered || systemButton.hovered
+        }
+
+        function targetMenu(name) {
+            if (name === "applications") {
+                return applicationsMenu
+            }
+            if (name === "places") {
+                return placesMenu
+            }
+            return systemMenu
+        }
+
+        function targetButton(name) {
+            if (name === "applications") {
+                return applicationsButton
+            }
+            if (name === "places") {
+                return placesButton
+            }
+            return systemButton
+        }
+
+        function prepareMenu(name) {
+            if (name === "applications" && (root.applicationsDirty || applicationsMenu.count === 0)) {
+                root.rebuildApplications(applicationsMenu)
+            } else if (name === "system" && (root.systemDirty || systemMenu.count === 0)) {
+                root.rebuildSystem(systemMenu)
+            }
         }
 
         function closeOtherTopMenus(keep) {
@@ -490,36 +459,66 @@ PlasmoidItem {
             }
         }
 
-        function openApplicationsMenu() {
-            menuBarActive = true
-            closeOtherTopMenus("applications")
-            if (root.applicationsDirty || applicationsMenu.count === 0) {
-                root.rebuildApplications(applicationsMenu)
+        function openMenu(name) {
+            const menu = targetMenu(name)
+            const button = targetButton(name)
+
+            if (menu.visible && activeMenuName === name) {
+                return
             }
-            if (!applicationsMenu.visible) {
-                applicationsMenu.popup(applicationsButton, 0, applicationsButton.height)
+
+            menuBarActive = true
+            switchingMenus = true
+            activeMenuName = name
+            deactivateTimer.stop()
+            prepareMenu(name)
+            closeOtherTopMenus(name)
+
+            // Separate Popup.Window menus can finish closing on the next event-loop
+            // pass. Opening the replacement one afterwards matches QMenuBar behavior
+            // and avoids the old popup stealing/closing the new one.
+            Qt.callLater(function() {
+                if (!menu.visible) {
+                    menu.popup(button, 0, button.height)
+                }
+                Qt.callLater(function() {
+                    menuBarRoot.switchingMenus = false
+                })
+            })
+        }
+
+        function toggleMenu(name) {
+            const menu = targetMenu(name)
+            if (menu.visible && activeMenuName === name) {
+                menuBarActive = false
+                switchingMenus = false
+                activeMenuName = ""
+                deactivateTimer.stop()
+                menu.close()
+            } else {
+                openMenu(name)
             }
         }
 
-        function openPlacesMenu() {
-            menuBarActive = true
-            closeOtherTopMenus("places")
-            if (root.placesDirty || placesMenu.count === 0) {
-                root.rebuildPlaces(placesMenu)
+        function topMenuClosed(name) {
+            if (activeMenuName === name && !switchingMenus) {
+                activeMenuName = ""
             }
-            if (!placesMenu.visible) {
-                placesMenu.popup(placesButton, 0, placesButton.height)
+
+            if (!switchingMenus) {
+                deactivateTimer.restart()
             }
         }
 
-        function openSystemMenu() {
-            menuBarActive = true
-            closeOtherTopMenus("system")
-            if (root.systemDirty || systemMenu.count === 0) {
-                root.rebuildSystem(systemMenu)
-            }
-            if (!systemMenu.visible) {
-                systemMenu.popup(systemButton, 0, systemButton.height)
+        Timer {
+            id: deactivateTimer
+            interval: 180
+            repeat: false
+            onTriggered: {
+                if (!menuBarRoot.anyTopMenuVisible() && !menuBarRoot.anyTopButtonHovered() && !menuBarRoot.switchingMenus) {
+                    menuBarRoot.menuBarActive = false
+                    menuBarRoot.activeMenuName = ""
+                }
             }
         }
 
@@ -535,18 +534,10 @@ PlasmoidItem {
                 display: PC3.AbstractButton.TextOnly
                 hoverEnabled: true
 
-                onClicked: {
-                    if (applicationsMenu.visible) {
-                        menuBarRoot.menuBarActive = false
-                        applicationsMenu.close()
-                    } else {
-                        menuBarRoot.openApplicationsMenu()
-                    }
-                }
-
+                onClicked: menuBarRoot.toggleMenu("applications")
                 onHoveredChanged: {
-                    if (hovered && menuBarRoot.menuBarActive && !applicationsMenu.visible) {
-                        menuBarRoot.openApplicationsMenu()
+                    if (hovered && menuBarRoot.menuBarActive && menuBarRoot.activeMenuName !== "applications") {
+                        menuBarRoot.openMenu("applications")
                     }
                 }
 
@@ -554,7 +545,7 @@ PlasmoidItem {
                     id: applicationsMenu
                     popupType: QQC2.Popup.Window
                     height: Math.min(implicitHeight, root.maxMenuHeight)
-                    onClosed: menuBarRoot.maybeDeactivateLater()
+                    onClosed: menuBarRoot.topMenuClosed("applications")
                 }
             }
 
@@ -564,18 +555,10 @@ PlasmoidItem {
                 display: PC3.AbstractButton.TextOnly
                 hoverEnabled: true
 
-                onClicked: {
-                    if (placesMenu.visible) {
-                        menuBarRoot.menuBarActive = false
-                        placesMenu.close()
-                    } else {
-                        menuBarRoot.openPlacesMenu()
-                    }
-                }
-
+                onClicked: menuBarRoot.toggleMenu("places")
                 onHoveredChanged: {
-                    if (hovered && menuBarRoot.menuBarActive && !placesMenu.visible) {
-                        menuBarRoot.openPlacesMenu()
+                    if (hovered && menuBarRoot.menuBarActive && menuBarRoot.activeMenuName !== "places") {
+                        menuBarRoot.openMenu("places")
                     }
                 }
 
@@ -583,7 +566,85 @@ PlasmoidItem {
                     id: placesMenu
                     popupType: QQC2.Popup.Window
                     height: Math.min(implicitHeight, root.maxMenuHeight)
-                    onClosed: menuBarRoot.maybeDeactivateLater()
+                    property int insertedPlaceItems: 0
+                    onClosed: menuBarRoot.topMenuClosed("places")
+
+                    Instantiator {
+                        id: placesInstantiator
+                        model: computerModel
+
+                        delegate: PC3.MenuItem {
+                            id: placeItem
+                            property int sourceRow: index
+                            property var rowDisplay: model.display
+                            property var rowDecoration: model.decoration
+                            property var rowGroup: model.group
+                            property bool includeInPlaces: String(rowGroup) !== i18n("Applications")
+
+                            visible: includeInPlaces
+                            enabled: includeInPlaces && String(rowDisplay || "").length > 0
+                            text: String(rowDisplay || "")
+                            icon.name: Plasmoid.configuration.showIcons && typeof rowDecoration === "string" ? rowDecoration : ""
+                            icon.source: Plasmoid.configuration.showIcons && typeof rowDecoration !== "string" ? rowDecoration : ""
+
+                            onClicked: computerModel.trigger(sourceRow, "", null)
+                        }
+
+                        onObjectAdded: function(index, object) {
+                            if (object.includeInPlaces) {
+                                placesMenu.insertItem(placesMenu.insertedPlaceItems, object)
+                                placesMenu.insertedPlaceItems += 1
+                            }
+                        }
+
+                        onObjectRemoved: function(index, object) {
+                            if (object.includeInPlaces) {
+                                placesMenu.removeItem(object)
+                                placesMenu.insertedPlaceItems = Math.max(0, placesMenu.insertedPlaceItems - 1)
+                            }
+                        }
+                    }
+
+                    PC3.MenuSeparator {
+                        visible: placesMenu.insertedPlaceItems > 0
+                    }
+
+                    PC3.Menu {
+                        id: recentDocumentsMenu
+                        title: i18n("Recent Documents")
+                        icon.name: Plasmoid.configuration.showIcons ? "document-open-recent" : ""
+                        popupType: QQC2.Popup.Window
+                        height: Math.min(implicitHeight, root.maxMenuHeight)
+
+                        PC3.MenuItem {
+                            visible: recentDocumentsModel.count === 0
+                            enabled: false
+                            text: i18n("No Recent Documents")
+                        }
+
+                        Instantiator {
+                            model: recentDocumentsModel
+
+                            delegate: PC3.MenuItem {
+                                property int sourceRow: index
+                                property var rowDisplay: model.display
+                                property var rowDecoration: model.decoration
+
+                                text: String(rowDisplay || "")
+                                icon.name: Plasmoid.configuration.showIcons && typeof rowDecoration === "string" ? rowDecoration : ""
+                                icon.source: Plasmoid.configuration.showIcons && typeof rowDecoration !== "string" ? rowDecoration : ""
+                                onClicked: recentDocumentsModel.trigger(sourceRow, "", null)
+                            }
+
+                            onObjectAdded: function(index, object) {
+                                recentDocumentsMenu.insertItem(index, object)
+                            }
+
+                            onObjectRemoved: function(index, object) {
+                                recentDocumentsMenu.removeItem(object)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -593,18 +654,10 @@ PlasmoidItem {
                 display: PC3.AbstractButton.TextOnly
                 hoverEnabled: true
 
-                onClicked: {
-                    if (systemMenu.visible) {
-                        menuBarRoot.menuBarActive = false
-                        systemMenu.close()
-                    } else {
-                        menuBarRoot.openSystemMenu()
-                    }
-                }
-
+                onClicked: menuBarRoot.toggleMenu("system")
                 onHoveredChanged: {
-                    if (hovered && menuBarRoot.menuBarActive && !systemMenu.visible) {
-                        menuBarRoot.openSystemMenu()
+                    if (hovered && menuBarRoot.menuBarActive && menuBarRoot.activeMenuName !== "system") {
+                        menuBarRoot.openMenu("system")
                     }
                 }
 
@@ -612,7 +665,7 @@ PlasmoidItem {
                     id: systemMenu
                     popupType: QQC2.Popup.Window
                     height: Math.min(implicitHeight, root.maxMenuHeight)
-                    onClosed: menuBarRoot.maybeDeactivateLater()
+                    onClosed: menuBarRoot.topMenuClosed("system")
                 }
             }
         }
