@@ -6,7 +6,7 @@
       }
     ],
     "Category": "Application Launchers",
-    "Description": "GNOME 2-style Applications, Places and System menus using Plasma/KDE data models",
+    "Description": "GNOME 2-style Applications, Places and System menubar using Plasma's native Global Menu QMenu behavior",
     "EnabledByDefault": true,
     "Icon": "start-here-kde",
     "Id": "org.local.plasma.gnome2menubar",
@@ -16,5 +16,6 @@
     "Website": "https://github.com/NeilRuffell/plasma-gnome2-menubar",
     "BugReportUrl": "https://github.com/NeilRuffell/plasma-gnome2-menubar/issues"
   },
+  "KPackageStructure": "Plasma/Applet",
   "X-Plasma-API-Minimum-Version": "6.0"
 }
