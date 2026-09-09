@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 from typing import Any
@@ -55,22 +56,31 @@ def integer_value(value: Any, default: int = 100) -> int:
 
 
 def available_kcms() -> dict[str, str]:
-    """Return KCM ids exposed by kcmshell6 and its human-readable fallback text."""
+    """Return modules that Plasma System Settings itself says are available."""
+    executable = shutil.which("systemsettings")
+    command = [executable, "--list"] if executable else []
+
+    if not command:
+        fallback = shutil.which("kcmshell6")
+        if not fallback:
+            return {}
+        command = [fallback, "--list"]
+
     try:
         result = subprocess.run(
-            ["kcmshell6", "--list"],
+            command,
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
-    except FileNotFoundError:
+    except OSError:
         return {}
 
     entries: dict[str, str] = {}
     for raw in result.stdout.splitlines():
         line = raw.strip()
-        if not line:
+        if not line or line.endswith(":"):
             continue
         match = re.match(r"^(\S+)\s+-\s+(.+)$", line)
         if not match:
@@ -78,6 +88,82 @@ def available_kcms() -> dict[str, str]:
         if match:
             entries.setdefault(match.group(1), match.group(2).strip())
     return entries
+
+
+def qtplugininfo_executable() -> str | None:
+    for candidate in (
+        shutil.which("qtplugininfo6"),
+        shutil.which("qtplugininfo"),
+        "/usr/lib/qt6/bin/qtplugininfo",
+    ):
+        if candidate and Path(candidate).is_file():
+            return str(candidate)
+    return None
+
+
+def qt_plugin_roots() -> list[Path]:
+    roots: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(path: Path) -> None:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            resolved = path
+        if resolved.is_dir() and resolved not in seen:
+            seen.add(resolved)
+            roots.append(resolved)
+
+    for item in os.environ.get("QT_PLUGIN_PATH", "").split(os.pathsep):
+        if item:
+            add(Path(item))
+
+    qtpaths = shutil.which("qtpaths6") or shutil.which("qtpaths")
+    if qtpaths:
+        try:
+            result = subprocess.run(
+                [qtpaths, "--plugin-dir"],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            candidate = result.stdout.strip()
+            if candidate:
+                add(Path(candidate))
+        except OSError:
+            pass
+
+    for base in (Path("/usr/lib"), Path("/usr/local/lib"), Path.home() / ".local/lib"):
+        add(base / "qt6/plugins")
+        if base.is_dir():
+            for candidate in base.glob("*/qt6/plugins"):
+                add(candidate)
+
+    return roots
+
+
+def qt_plugin_metadata(path: Path, tool: str) -> dict[str, Any] | None:
+    try:
+        result = subprocess.run(
+            [tool, "--full-json", str(path)],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    try:
+        document = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(document, dict):
+        return None
+    metadata = document.get("MetaData", {})
+    return metadata if isinstance(metadata, dict) else None
 
 
 def localized_json_string(obj: dict[str, Any], key: str) -> str:
@@ -126,72 +212,50 @@ def category_metadata() -> dict[str, dict[str, Any]]:
     return categories
 
 
-def metadata_json_candidates() -> list[Path]:
-    """Find installed KPackage KCM metadata without scanning all of /usr/share."""
-    found: list[Path] = []
-    seen: set[Path] = set()
-
-    for root in data_roots():
-        for base in (root / "kpackage" / "kcms", root / "plasma" / "kcms"):
-            if not base.is_dir():
-                continue
-            for path in base.rglob("metadata.json"):
-                if path not in seen:
-                    seen.add(path)
-                    found.append(path)
-    return found
-
-
 def kcm_metadata_entries(available: dict[str, str]) -> list[dict[str, Any]]:
-    """Discover System Settings KCMs from their KDE plugin metadata."""
+    """Discover System Settings KCMs from the same compiled plugin metadata KDE uses."""
     entries: dict[str, dict[str, Any]] = {}
+    tool = qtplugininfo_executable()
 
-    for path in metadata_json_candidates():
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            continue
-        if not isinstance(raw, dict):
-            continue
+    if tool:
+        namespaces = (
+            Path("plasma/kcms"),
+            Path("plasma/kcms/systemsettings"),
+            Path("plasma/kcms/systemsettings_qwidgets"),
+        )
+        for plugin_root in qt_plugin_roots():
+            for namespace in namespaces:
+                directory = plugin_root / namespace
+                if not directory.is_dir():
+                    continue
+                for path in directory.glob("*.so"):
+                    module_id = path.stem
+                    if module_id not in available or module_id in entries:
+                        continue
+                    raw = qt_plugin_metadata(path, tool)
+                    if not raw:
+                        continue
 
-        plugin = raw.get("KPlugin", {})
-        if not isinstance(plugin, dict):
-            plugin = {}
+                    parent_v2 = raw.get("X-KDE-System-Settings-Parent-Category-V2", "")
+                    parent = parent_v2 or raw.get("X-KDE-System-Settings-Parent-Category", "")
+                    if not isinstance(parent, str) or not parent.strip():
+                        continue
+                    parent = parent.strip()
 
-        parent_v2 = raw.get("X-KDE-System-Settings-Parent-Category-V2", "")
-        parent = parent_v2 or raw.get("X-KDE-System-Settings-Parent-Category", "")
-        if not isinstance(parent, str) or not parent.strip():
-            # This also excludes KInfoCenter-only KCMs.
-            continue
-        parent = parent.strip()
-
-        candidates = []
-        plugin_id = plugin.get("Id", "")
-        if isinstance(plugin_id, str) and plugin_id.strip():
-            candidates.append(plugin_id.strip())
-        if path.name == "metadata.json":
-            candidates.append(path.parent.name)
-        else:
-            candidates.append(path.stem)
-
-        module_id = next((item for item in candidates if item in available), "")
-        if not module_id:
-            # A metadata entry not exposed by kcmshell6 can be platform-inapplicable.
-            continue
-        if module_id in entries:
-            continue
-
-        name = localized_json_string(plugin, "Name") or available[module_id]
-        icon = localized_json_string(plugin, "Icon")
-        entries[module_id] = {
-            "type": "item",
-            "kind": "kcm",
-            "id": module_id,
-            "name": name,
-            "icon": icon or "preferences-system",
-            "parent": parent,
-            "weight": integer_value(raw.get("X-KDE-Weight", 100)),
-        }
+                    plugin = raw.get("KPlugin", {})
+                    if not isinstance(plugin, dict):
+                        plugin = {}
+                    name = localized_json_string(plugin, "Name") or available[module_id]
+                    icon = localized_json_string(plugin, "Icon")
+                    entries[module_id] = {
+                        "type": "item",
+                        "kind": "kcm",
+                        "id": module_id,
+                        "name": name,
+                        "icon": icon or "preferences-system",
+                        "parent": parent,
+                        "weight": integer_value(raw.get("X-KDE-Weight", 100)),
+                    }
 
     # Some distributions/external KCMs still expose desktop metadata.
     desktop_dirs: list[Path] = []
@@ -293,7 +357,8 @@ def preference_tree() -> list[dict[str, Any]]:
         parent = category.get("parent", "")
         if parent and parent in categories and parent not in {"rootcategory", "lost-and-found"}:
             categories[parent]["children"].append(category)
-        elif parent not in {"rootcategory", "lost-and-found"}:
+        elif parent != "lost-and-found":
+            # Categories directly under rootcategory are the top-level System Settings groups.
             roots.append(category)
 
     # If a distro has a valid System Settings KCM whose category desktop file is
