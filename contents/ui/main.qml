@@ -26,8 +26,6 @@ PlasmoidItem {
     property bool placesDirty: true
     property bool systemDirty: true
 
-    // Keep popup menus within the usable screen height. Plasma's Menu content is
-    // a ListView; once the popup is capped, its built-in scrolling is enabled.
     readonly property real maxMenuHeight: Math.max(160, Screen.desktopAvailableHeight - 24)
 
     function localFilePath(url) {
@@ -52,8 +50,6 @@ PlasmoidItem {
         return cmd
     }
 
-    // QML destroy() is deferred. Explicitly remove each item/menu from the Menu
-    // model first so a rebuild cannot leave disabled "ghost" duplicates behind.
     function clearMenu(menu) {
         while (menu && menu.count > 0) {
             const submenu = menu.menuAt(0)
@@ -70,8 +66,6 @@ PlasmoidItem {
                 removedItem.destroy()
                 continue
             }
-
-            // Defensive escape in case a future Qt Menu content type is neither.
             break
         }
     }
@@ -434,52 +428,6 @@ PlasmoidItem {
         }
     }
 
-    function anyTopMenuVisible() {
-        return applicationsMenu.visible || placesMenu.visible || systemMenu.visible
-    }
-
-    function closeOtherTopMenus(keep) {
-        if (keep !== "applications" && applicationsMenu.visible) {
-            applicationsMenu.close()
-        }
-        if (keep !== "places" && placesMenu.visible) {
-            placesMenu.close()
-        }
-        if (keep !== "system" && systemMenu.visible) {
-            systemMenu.close()
-        }
-    }
-
-    function openApplicationsMenu() {
-        closeOtherTopMenus("applications")
-        if (root.applicationsDirty || applicationsMenu.count === 0) {
-            root.rebuildApplications(applicationsMenu)
-        }
-        if (!applicationsMenu.visible) {
-            applicationsMenu.popup(applicationsButton, 0, applicationsButton.height)
-        }
-    }
-
-    function openPlacesMenu() {
-        closeOtherTopMenus("places")
-        if (root.placesDirty || placesMenu.count === 0) {
-            root.rebuildPlaces(placesMenu)
-        }
-        if (!placesMenu.visible) {
-            placesMenu.popup(placesButton, 0, placesButton.height)
-        }
-    }
-
-    function openSystemMenu() {
-        closeOtherTopMenus("system")
-        if (root.systemDirty || systemMenu.count === 0) {
-            root.rebuildSystem(systemMenu)
-        }
-        if (!systemMenu.visible) {
-            systemMenu.popup(systemButton, 0, systemButton.height)
-        }
-    }
-
     Connections {
         target: Plasmoid.configuration
         function onShowIconsChanged() {
@@ -508,6 +456,52 @@ PlasmoidItem {
         Layout.maximumWidth: implicitWidth
         Layout.minimumHeight: implicitHeight
 
+        function anyTopMenuVisible() {
+            return applicationsMenu.visible || placesMenu.visible || systemMenu.visible
+        }
+
+        function closeOtherTopMenus(keep) {
+            if (keep !== "applications" && applicationsMenu.visible) {
+                applicationsMenu.close()
+            }
+            if (keep !== "places" && placesMenu.visible) {
+                placesMenu.close()
+            }
+            if (keep !== "system" && systemMenu.visible) {
+                systemMenu.close()
+            }
+        }
+
+        function openApplicationsMenu() {
+            closeOtherTopMenus("applications")
+            if (root.applicationsDirty || applicationsMenu.count === 0) {
+                root.rebuildApplications(applicationsMenu)
+            }
+            if (!applicationsMenu.visible) {
+                applicationsMenu.popup(applicationsButton, 0, applicationsButton.height)
+            }
+        }
+
+        function openPlacesMenu() {
+            closeOtherTopMenus("places")
+            if (root.placesDirty || placesMenu.count === 0) {
+                root.rebuildPlaces(placesMenu)
+            }
+            if (!placesMenu.visible) {
+                placesMenu.popup(placesButton, 0, placesButton.height)
+            }
+        }
+
+        function openSystemMenu() {
+            closeOtherTopMenus("system")
+            if (root.systemDirty || systemMenu.count === 0) {
+                root.rebuildSystem(systemMenu)
+            }
+            if (!systemMenu.visible) {
+                systemMenu.popup(systemButton, 0, systemButton.height)
+            }
+        }
+
         Row {
             id: menuRow
             anchors.left: parent.left
@@ -523,12 +517,12 @@ PlasmoidItem {
                     if (applicationsMenu.visible) {
                         applicationsMenu.close()
                     } else {
-                        root.openApplicationsMenu()
+                        menuBarRoot.openApplicationsMenu()
                     }
                 }
                 onHoveredChanged: {
-                    if (hovered && root.anyTopMenuVisible() && !applicationsMenu.visible) {
-                        root.openApplicationsMenu()
+                    if (hovered && menuBarRoot.anyTopMenuVisible() && !applicationsMenu.visible) {
+                        menuBarRoot.openApplicationsMenu()
                     }
                 }
 
@@ -548,12 +542,12 @@ PlasmoidItem {
                     if (placesMenu.visible) {
                         placesMenu.close()
                     } else {
-                        root.openPlacesMenu()
+                        menuBarRoot.openPlacesMenu()
                     }
                 }
                 onHoveredChanged: {
-                    if (hovered && root.anyTopMenuVisible() && !placesMenu.visible) {
-                        root.openPlacesMenu()
+                    if (hovered && menuBarRoot.anyTopMenuVisible() && !placesMenu.visible) {
+                        menuBarRoot.openPlacesMenu()
                     }
                 }
 
@@ -573,12 +567,12 @@ PlasmoidItem {
                     if (systemMenu.visible) {
                         systemMenu.close()
                     } else {
-                        root.openSystemMenu()
+                        menuBarRoot.openSystemMenu()
                     }
                 }
                 onHoveredChanged: {
-                    if (hovered && root.anyTopMenuVisible() && !systemMenu.visible) {
-                        root.openSystemMenu()
+                    if (hovered && menuBarRoot.anyTopMenuVisible() && !systemMenu.visible) {
+                        menuBarRoot.openSystemMenu()
                     }
                 }
 
