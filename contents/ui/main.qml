@@ -3,9 +3,9 @@
  *
  * GNOME 2-style Applications / Places / System menubar for Plasma 6.
  *
- * Interaction is delegated to Qt Quick Controls MenuBar. Do not add a
- * separate hover/click state machine here: QQuickMenuBar already implements
- * native menubar switching, including top-level Popup.Window menus.
+ * Top-level panel presentation is intentionally aligned with Plasma's Global
+ * Menu applet. Local menu switching remains owned by Qt Quick Controls
+ * MenuBar; do not add a parallel hover/click state machine here.
  */
 
 pragma ComponentBehavior: Bound
@@ -25,6 +25,7 @@ import org.kde.plasma.private.kicker as Kicker
 PlasmoidItem {
     id: root
 
+    Plasmoid.constraintHints: Plasmoid.CanFillArea
     preferredRepresentation: fullRepresentation
 
     property var kcmEntries: []
@@ -378,12 +379,16 @@ PlasmoidItem {
     fullRepresentation: QQC2.MenuBar {
         id: menuBar
 
+        delegate: GlobalMenuDelegate {}
+
         spacing: 0
         leftPadding: 0
         rightPadding: 0
         topPadding: 0
         bottomPadding: 0
         background: null
+
+        LayoutMirroring.enabled: Application.layoutDirection === Qt.RightToLeft
 
         Layout.minimumWidth: implicitWidth
         Layout.preferredWidth: implicitWidth
