@@ -29,6 +29,7 @@
 #include <QScreen>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QWidget>
 #include <QWindow>
 
 #include <algorithm>
@@ -100,21 +101,32 @@ bool preferenceLess(const QVariant &left, const QVariant &right)
 Gnome2MenuBarApplet::Gnome2MenuBarApplet(QObject *parent, const KPluginMetaData &data, const QVariantList &args)
     : Plasma::Applet(parent, data, args)
 {
+    // Plasma Global Menu's File/Edit/View source menus are submenus of one
+    // imported root QMenu. Reproduce that QWidget ownership hierarchy here so
+    // the persistent visible popup can use the same source-menu parent.
+    m_menuRoot = new QMenu;
     for (MenuState &state : m_menus) {
-        state.root = new QMenu;
+        state.root = new QMenu(m_menuRoot);
+        m_menuRoot->addMenu(state.root);
         state.handles.insert(0, state.root);
     }
 }
 
 Gnome2MenuBarApplet::~Gnome2MenuBarApplet()
 {
-    restoreCurrentMenuActions();
+    // Match Global Menu's hide lifecycle: reconnect the visible menuAction to
+    // its source without mutating the action list during popup teardown.
+    if (m_currentMenu && m_sourceMenu) {
+        QAction *menuAction = m_currentMenu->menuAction();
+        menuAction->setMenu(m_sourceMenu);
+    }
 
-    delete m_currentMenu;
+    delete m_menuRoot;
+    m_menuRoot = nullptr;
     m_currentMenu = nullptr;
+    m_sourceMenu = nullptr;
 
     for (MenuState &state : m_menus) {
-        delete state.root;
         state.root = nullptr;
         state.handles.clear();
     }
@@ -222,6 +234,14 @@ void Gnome2MenuBarApplet::clearMenu(int topIndex)
         return;
     }
 
+    // Global Menu deliberately leaves the last source's actions in the shared
+    // visible QMenu after aboutToHide. If our dynamic source became dirty while
+    // it was active, restore those actions only now, after the popup event has
+    // fully completed, before rebuilding that inactive source menu.
+    if (m_sourceMenu == state.root && m_currentMenu && !m_currentMenu->isVisible()) {
+        restoreCurrentMenuActions();
+    }
+
     state.root->clear();
     state.handles.clear();
     state.handles.insert(0, state.root);
@@ -292,10 +312,9 @@ void Gnome2MenuBarApplet::restoreCurrentMenuActions()
         return;
     }
 
-    // Keep the exact ownership/menuAction hand-off used by Plasma's Global
-    // Menu applet. It is not enough to only move the QAction objects: the
-    // source menu's menuAction must point back to the source QMenu when the
-    // shared visible menu is released.
+    // This is the exact action hand-off Global Menu performs when switching
+    // from one top-level source menu to another. It is intentionally *not*
+    // called synchronously from aboutToHide.
     QAction *menuAction = m_currentMenu->menuAction();
     const QList<QAction *> actions = m_currentMenu->actions();
     for (QAction *action : actions) {
@@ -307,15 +326,18 @@ void Gnome2MenuBarApplet::restoreCurrentMenuActions()
 
 void Gnome2MenuBarApplet::onMenuAboutToHide()
 {
-    restoreCurrentMenuActions();
+    // Match Plasma 6.6.5 Global Menu literally: do not remove/reinsert actions
+    // from the QMenu while Qt is processing the outside click that hides it.
+    // Only restore the menuAction relationship and clear the active index.
+    if (m_currentMenu && m_sourceMenu) {
+        QAction *menuAction = m_currentMenu->menuAction();
+        menuAction->setMenu(m_sourceMenu);
+    }
     setCurrentIndex(-1);
 }
 
 void Gnome2MenuBarApplet::trigger(QQuickItem *ctx, int idx)
 {
-    // This popup/switching flow mirrors Plasma's Global Menu applet. The key
-    // detail is that one persistent QMenu stays visible while its action set is
-    // swapped when the pointer crosses another top-level menubar button.
     if (m_currentIndex == idx) {
         return;
     }
@@ -325,25 +347,27 @@ void Gnome2MenuBarApplet::trigger(QQuickItem *ctx, int idx)
     }
 
     QMenu *actionMenu = sourceMenu(idx);
-    if (!actionMenu || actionMenu->isEmpty()) {
+    if (!actionMenu) {
         return;
     }
 
+    // Same mouse-ungrab workaround used by Plasma Global Menu.
     auto ungrabMouseHack = [ctx]() {
         if (ctx && ctx->window() && ctx->window()->mouseGrabberItem()) {
             ctx->window()->mouseGrabberItem()->ungrabMouse();
         }
     };
 
+    // Keep this block structurally aligned with AppMenuApplet::trigger() in
+    // plasma-workspace 6.6.5 FullView.
     if (!m_currentMenu) {
-        m_currentMenu = new QMenu;
+        m_currentMenu = new QMenu(qobject_cast<QWidget *>(actionMenu->parent()));
         connect(m_currentMenu, &QMenu::aboutToHide, this, &Gnome2MenuBarApplet::onMenuAboutToHide, Qt::UniqueConnection);
-    } else if (m_sourceMenu && m_sourceMenu != actionMenu) {
+    } else if (m_sourceMenu != actionMenu) {
         restoreCurrentMenuActions();
     }
 
     m_sourceMenu = actionMenu;
-
     QAction *menuAction = m_sourceMenu->menuAction();
     const QList<QAction *> sourceActions = m_sourceMenu->actions();
     for (QAction *action : sourceActions) {
@@ -354,24 +378,17 @@ void Gnome2MenuBarApplet::trigger(QQuickItem *ctx, int idx)
 
     QTimer::singleShot(0, ctx, ungrabMouseHack);
 
-    const QRect geo = ctx->window()->screen()->availableVirtualGeometry();
+    const auto &geo = ctx->window()->screen()->availableVirtualGeometry();
     QPoint pos = ctx->window()->mapToGlobal(ctx->mapToScene(QPointF()).toPoint());
 
     const Qt::Edges edges = edgeFromLocation(location());
     m_currentMenu->setProperty("_breeze_menu_seamless_edges", QVariant::fromValue(edges));
 
+    // Plasma Global Menu 6.6.5 only applies the explicit panel-edge offset for
+    // TopEdge. Keep this exact rather than maintaining a second positioning
+    // policy in this applet.
     if (location() == Plasma::Types::TopEdge) {
-        pos.setY(pos.y() + qRound(ctx->height()));
-    } else if (location() == Plasma::Types::BottomEdge) {
-        m_currentMenu->adjustSize();
-        pos.setY(pos.y() - m_currentMenu->height());
-    } else if (location() == Plasma::Types::LeftEdge) {
-        pos.setX(pos.x() + qRound(ctx->width()));
-    } else if (location() == Plasma::Types::RightEdge) {
-        m_currentMenu->adjustSize();
-        pos.setX(pos.x() - m_currentMenu->width());
-    } else {
-        pos.setY(pos.y() + qRound(ctx->height()));
+        pos.setY(pos.y() + ctx->height());
     }
 
     m_currentMenu->adjustSize();
@@ -382,7 +399,7 @@ void Gnome2MenuBarApplet::trigger(QQuickItem *ctx, int idx)
         m_currentMenu->move(pos);
     } else {
         m_currentMenu->installEventFilter(this);
-        m_currentMenu->winId();
+        m_currentMenu->winId(); // create window handle, as Global Menu does
         m_currentMenu->windowHandle()->setTransientParent(ctx->window());
         m_currentMenu->popup(pos);
     }
