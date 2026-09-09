@@ -17,6 +17,14 @@ import plasma.applet.org.local.plasma.gnome2menubar
 PlasmoidItem {
     id: root
 
+    readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
+
+    // Kicker::UrlRole from plasma-workspace/applets/kicker/actionlist.h.
+    // ComputerModel gives this role only to actual KDE Places rows; KRunner
+    // and optional system application rows are therefore excluded without
+    // relying on translated labels or icon-name heuristics.
+    readonly property int kickerUrlRole: Qt.UserRole + 10
+
     preferredRepresentation: fullRepresentation
     Plasmoid.constraintHints: Plasmoid.CanFillArea
 
@@ -25,6 +33,8 @@ PlasmoidItem {
     property bool placesDirty: true
     property bool systemDirty: true
 
+    // QAction callbacks stay in QML because the Kicker models are QML-facing
+    // Plasma models. The native backend only owns QMenu presentation/switching.
     property var actionTargets: ({})
     property var menuTokens: [[], [], []]
     property int actionSerial: 0
@@ -142,17 +152,26 @@ PlasmoidItem {
 
         let addedPlaces = 0
         for (let row = 0; row < computerModel.count; ++row) {
-            const text = modelText(computerModel, row)
-            const iconValue = modelIcon(computerModel, row)
+            const index = computerModel.index(row, 0)
+            const placeUrl = computerModel.data(index, root.kickerUrlRole)
+            if (!placeUrl || String(placeUrl).length === 0) {
+                continue
+            }
 
-            // ComputerModel prepends KRunner. Its icon role is a stable model
-            // value, unlike the translated visible label.
-            if (!text || (typeof iconValue === "string" && iconValue === "plasma-search")) {
+            const text = String(computerModel.data(index, Qt.DisplayRole) || "")
+            if (!text) {
                 continue
             }
 
             const token = registerTarget(topIndex, computerModel, row)
-            Plasmoid.addAction(topIndex, 0, text, iconValue, token, true)
+            Plasmoid.addAction(
+                topIndex,
+                0,
+                text,
+                computerModel.data(index, Qt.DecorationRole),
+                token,
+                true
+            )
             addedPlaces += 1
         }
 
@@ -223,9 +242,9 @@ PlasmoidItem {
     }
 
     function prepareMenu(index) {
-        // A currently visible source menu has had its actions moved into the
-        // shared native QMenu, exactly as in Global Menu. Never rebuild it in
-        // place; model changes will be picked up the next time it is opened.
+        // While a top menu is visible, its QAction set lives temporarily in
+        // the shared visible QMenu. Rebuild only inactive source menus; this is
+        // the same ownership rule Plasma Global Menu follows.
         if (Plasmoid.currentIndex === index) {
             return
         }
@@ -325,13 +344,11 @@ PlasmoidItem {
     fullRepresentation: GridLayout {
         id: buttonGrid
 
+        LayoutMirroring.enabled: Application.layoutDirection === Qt.RightToLeft
         Layout.minimumWidth: implicitWidth
         Layout.minimumHeight: implicitHeight
-        Layout.preferredWidth: implicitWidth
-        Layout.maximumWidth: implicitWidth
 
-        rows: 1
-        columns: 3
+        flow: root.vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
         rowSpacing: 0
         columnSpacing: 0
 
@@ -352,7 +369,8 @@ PlasmoidItem {
 
                 readonly property int buttonIndex: index
 
-                Layout.fillHeight: true
+                Layout.fillWidth: root.vertical
+                Layout.fillHeight: !root.vertical
                 text: modelData
                 down: Plasmoid.currentIndex === index
                 menuIsOpen: Plasmoid.currentIndex !== -1
@@ -362,6 +380,15 @@ PlasmoidItem {
                     Plasmoid.trigger(this, index)
                 }
             }
+        }
+
+        // Same zero-size filler used by Plasma Global Menu so the menubar
+        // occupies only its natural content while still satisfying GridLayout.
+        Item {
+            Layout.preferredWidth: 0
+            Layout.preferredHeight: 0
+            Layout.fillWidth: true
+            Layout.fillHeight: true
         }
     }
 }
