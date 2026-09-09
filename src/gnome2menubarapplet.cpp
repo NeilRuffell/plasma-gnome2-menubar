@@ -523,7 +523,9 @@ QVariantList Gnome2MenuBarApplet::preferenceTree() const
         QStringLiteral("plasma/kcms/systemsettings_qwidgets"), systemSettingsFilter);
 
     for (const KPluginMetaData &metaData : std::as_const(pluginList)) {
-        if (!metaData.isValid() || !KAuthorized::authorizeControlModule(metaData.pluginId())) {
+        if (!metaData.isValid()
+            || metaData.isHidden()
+            || !KAuthorized::authorizeControlModule(metaData.pluginId())) {
             continue;
         }
 
