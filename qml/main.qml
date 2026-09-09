@@ -116,7 +116,7 @@ PlasmoidItem {
                     Plasmoid.addAction(
                         topIndex,
                         parentHandle,
-                        node.name || moduleId,
+                        node.name,
                         node.icon || "preferences-system",
                         "kcm:" + moduleId,
                         true
@@ -189,7 +189,10 @@ PlasmoidItem {
             Plasmoid.addAction(topIndex, recentHandle, i18n("No Recent Documents"), "", "", false)
         } else {
             for (let row = 0; row < recentDocumentsModel.count; ++row) {
-                const text = recentDocumentsModel.labelForRow(row)
+                // RecentUsageModel is a ForwardingModel whose source is not an
+                // AbstractModel, so labelForRow() is empty. KDE exposes the
+                // document filename through Qt.DisplayRole instead.
+                const text = modelText(recentDocumentsModel, row)
                 const token = registerTarget(topIndex, recentDocumentsModel, row)
                 Plasmoid.addAction(
                     topIndex,
