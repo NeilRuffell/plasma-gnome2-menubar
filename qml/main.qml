@@ -448,13 +448,5 @@ PlasmoidItem {
             }
         }
 
-        // Same zero-size filler used by Plasma Global Menu so the menubar
-        // occupies only its natural content while still satisfying GridLayout.
-        Item {
-            Layout.preferredWidth: 0
-            Layout.preferredHeight: 0
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-        }
     }
 }
