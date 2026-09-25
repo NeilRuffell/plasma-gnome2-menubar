@@ -308,6 +308,46 @@ void Gnome2MenuBarApplet::addAction(int topIndex,
     }
 }
 
+void Gnome2MenuBarApplet::addModelAction(int topIndex,
+                                         int parentHandle,
+                                         const QString &text,
+                                         const QVariant &icon,
+                                         QObject *model,
+                                         int row,
+                                         bool enabled)
+{
+    QMenu *parentMenu = menuForHandle(topIndex, parentHandle);
+    if (!parentMenu || !model) {
+        return;
+    }
+
+    QAction *action = nullptr;
+    const QIcon actionIcon = iconFromVariant(icon);
+    if (actionIcon.isNull()) {
+        action = parentMenu->addAction(text);
+    } else {
+        action = parentMenu->addAction(actionIcon, text);
+    }
+
+    action->setEnabled(enabled);
+
+    const QPointer<QObject> modelGuard(model);
+    connect(action, &QAction::triggered, this, [modelGuard, row]() {
+        if (!modelGuard) {
+            return;
+        }
+
+        bool triggered = false;
+        QMetaObject::invokeMethod(modelGuard.data(),
+                                  "trigger",
+                                  Qt::DirectConnection,
+                                  Q_RETURN_ARG(bool, triggered),
+                                  Q_ARG(int, row),
+                                  Q_ARG(QString, QString()),
+                                  Q_ARG(QVariant, QVariant()));
+    });
+}
+
 void Gnome2MenuBarApplet::addSeparator(int topIndex, int parentHandle)
 {
     QMenu *parentMenu = menuForHandle(topIndex, parentHandle);
