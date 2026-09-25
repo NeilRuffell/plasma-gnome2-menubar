@@ -6,6 +6,7 @@
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 
 import org.kde.ksvg as KSvg
 import org.kde.plasma.components as PC3
@@ -15,6 +16,7 @@ AbstractButton {
     id: controlRoot
 
     property bool menuIsOpen: false
+    property string leadingIcon: ""
 
     signal activated()
 
@@ -71,11 +73,26 @@ AbstractButton {
         }
     }
 
-    contentItem: PC3.Label {
-        text: controlRoot.Kirigami.MnemonicData.richTextLabel
-        textFormat: Text.StyledText
-        verticalAlignment: Text.AlignVCenter
-        elide: Text.ElideRight
-        color: controlRoot.menuState === MenuDelegate.State.Rest ? Kirigami.Theme.textColor : Kirigami.Theme.highlightedTextColor
+    contentItem: RowLayout {
+        spacing: Kirigami.Units.smallSpacing
+
+        Kirigami.Icon {
+            visible: controlRoot.leadingIcon.length > 0
+            source: controlRoot.leadingIcon
+            implicitWidth: visible ? Kirigami.Units.iconSizes.smallMedium : 0
+            implicitHeight: implicitWidth
+            Layout.minimumWidth: implicitWidth
+            Layout.preferredWidth: implicitWidth
+            Layout.maximumWidth: implicitWidth
+            Layout.alignment: Qt.AlignVCenter
+        }
+
+        PC3.Label {
+            text: controlRoot.Kirigami.MnemonicData.richTextLabel
+            textFormat: Text.StyledText
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+            color: controlRoot.menuState === MenuDelegate.State.Rest ? Kirigami.Theme.textColor : Kirigami.Theme.highlightedTextColor
+        }
     }
 }
