@@ -451,7 +451,7 @@ PlasmoidItem {
                 Layout.fillWidth: root.vertical
                 Layout.fillHeight: !root.vertical
                 text: modelData
-                icon.name: index === 0 && Plasmoid.configuration.showDistributionIcon ? "start-here" : ""
+                leadingIcon: index === 0 && Plasmoid.configuration.showDistributionIcon ? "start-here" : ""
                 Kirigami.MnemonicData.active: altState.pressed
 
                 down: Plasmoid.currentIndex === index
