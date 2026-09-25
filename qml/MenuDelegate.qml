@@ -5,16 +5,17 @@
  */
 
 import QtQuick
+import QtQuick.Controls
+
 import org.kde.ksvg as KSvg
 import org.kde.plasma.components as PC3
 import org.kde.kirigami as Kirigami
 
-PC3.ToolButton {
+AbstractButton {
     id: controlRoot
 
     property bool menuIsOpen: false
-
-    display: PC3.AbstractButton.TextBesideIcon
+    property string leadingIcon: ""
 
     signal activated()
 
@@ -59,13 +60,6 @@ PC3.ToolButton {
     rightPadding: rest.margins.right
     bottomPadding: rest.margins.bottom
 
-    // Preserve the original Global Menu text color behavior while using
-    // Plasma's standard icon+label content implementation.
-    Kirigami.Theme.textColor: controlRoot.menuState === MenuDelegate.State.Rest
-        ? undefined
-        : controlRoot.Kirigami.Theme.highlightedTextColor
-    Kirigami.Theme.inherit: controlRoot.menuState === MenuDelegate.State.Rest
-
     Accessible.description: i18nc("@info:usagetip", "Open a menu")
 
     background: KSvg.FrameSvgItem {
@@ -78,4 +72,29 @@ PC3.ToolButton {
         }
     }
 
+    contentItem: PC3.Label {
+        id: menuLabel
+
+        leftPadding: menuIcon.visible
+            ? menuIcon.width + Kirigami.Units.smallSpacing
+            : 0
+
+        text: controlRoot.Kirigami.MnemonicData.richTextLabel
+        textFormat: Text.StyledText
+        verticalAlignment: Text.AlignVCenter
+        elide: Text.ElideRight
+        color: controlRoot.menuState === MenuDelegate.State.Rest
+            ? Kirigami.Theme.textColor
+            : Kirigami.Theme.highlightedTextColor
+
+        Kirigami.Icon {
+            id: menuIcon
+            visible: controlRoot.leadingIcon.length > 0
+            source: controlRoot.leadingIcon
+            width: Kirigami.Units.iconSizes.sizeForLabels
+            height: width
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+        }
+    }
 }
