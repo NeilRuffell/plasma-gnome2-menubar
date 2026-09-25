@@ -146,7 +146,6 @@ PlasmoidItem {
 
     function rebuildPlaces() {
         const topIndex = 1
-        resetTargets(topIndex)
         Plasmoid.clearMenu(topIndex)
 
         let addedPlaces = 0
@@ -210,7 +209,6 @@ PlasmoidItem {
 
     function rebuildSystem() {
         const topIndex = 2
-        resetTargets(topIndex)
         Plasmoid.clearMenu(topIndex)
 
         const preferencesHandle = Plasmoid.addSubmenu(
