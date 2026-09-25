@@ -29,16 +29,18 @@ PlasmoidItem {
 
     preferredRepresentation: fullRepresentation
 
-    // Behave like a normal fixed-size panel widget: consume only the natural
-    // menubar length, while filling the panel thickness.
-    Layout.fillWidth: root.vertical
-    Layout.fillHeight: !root.vertical
+    // Normal panel-widget sizing: never expand along the panel's length.
+    // The representation below supplies the natural content size.
+    Layout.fillWidth: false
+    Layout.fillHeight: false
     Layout.minimumWidth: buttonGrid.implicitWidth
     Layout.preferredWidth: buttonGrid.implicitWidth
     Layout.maximumWidth: buttonGrid.implicitWidth
     Layout.minimumHeight: buttonGrid.implicitHeight
     Layout.preferredHeight: buttonGrid.implicitHeight
     Layout.maximumHeight: buttonGrid.implicitHeight
+    implicitWidth: buttonGrid.implicitWidth
+    implicitHeight: buttonGrid.implicitHeight
 
     property var kcmEntries: []
     property bool applicationsDirty: true
@@ -388,8 +390,16 @@ PlasmoidItem {
         }
 
         LayoutMirroring.enabled: Application.layoutDirection === Qt.RightToLeft
+
+        // Do not let PlasmoidItem stretch this representation across the panel.
+        Layout.fillWidth: false
+        Layout.fillHeight: false
         Layout.minimumWidth: implicitWidth
+        Layout.preferredWidth: implicitWidth
+        Layout.maximumWidth: implicitWidth
         Layout.minimumHeight: implicitHeight
+        Layout.preferredHeight: implicitHeight
+        Layout.maximumHeight: implicitHeight
 
         flow: root.vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
         rowSpacing: 0
