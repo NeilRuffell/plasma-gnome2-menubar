@@ -47,27 +47,6 @@ PlasmoidItem {
     property bool placesDirty: true
     property bool systemDirty: true
 
-    // QAction callbacks stay in QML because the Kicker models are QML-facing
-    // Plasma models. The native backend only owns QMenu presentation/switching.
-    property var actionTargets: ({})
-    property var menuTokens: [[], [], []]
-    property int actionSerial: 0
-
-    function resetTargets(menuIndex) {
-        const tokens = menuTokens[menuIndex]
-        for (let i = 0; i < tokens.length; ++i) {
-            delete actionTargets[tokens[i]]
-        }
-        menuTokens[menuIndex] = []
-    }
-
-    function registerTarget(menuIndex, modelObject, row) {
-        const token = "model:" + menuIndex + ":" + (++actionSerial)
-        actionTargets[token] = {"model": modelObject, "row": row}
-        menuTokens[menuIndex].push(token)
-        return token
-    }
-
     // QMenu interprets '&' as a mnemonic marker. All strings supplied by the
     // KDE models here are display labels, so literal ampersands must be escaped
     // before they are handed to QAction/QMenu. This preserves labels such as
@@ -110,8 +89,7 @@ PlasmoidItem {
             } else if (!text || String(text).trim().length === 0) {
                 Plasmoid.addSeparator(topIndex, parentHandle)
             } else {
-                const token = registerTarget(topIndex, sourceModel, row)
-                Plasmoid.addAction(topIndex, parentHandle, qMenuText(text), iconValue, token, true)
+                Plasmoid.addModelAction(topIndex, parentHandle, qMenuText(text), iconValue, sourceModel, row, true)
             }
         }
     }
@@ -161,7 +139,6 @@ PlasmoidItem {
 
     function rebuildApplications() {
         const topIndex = 0
-        resetTargets(topIndex)
         Plasmoid.clearMenu(topIndex)
         appendKickerModel(topIndex, 0, applicationsModel, 0)
         applicationsDirty = false
@@ -185,13 +162,13 @@ PlasmoidItem {
                 continue
             }
 
-            const token = registerTarget(topIndex, computerModel, row)
-            Plasmoid.addAction(
+            Plasmoid.addModelAction(
                 topIndex,
                 0,
                 qMenuText(text),
                 computerModel.data(index, Qt.DecorationRole),
-                token,
+                computerModel,
+                row,
                 true
             )
             addedPlaces += 1
@@ -216,13 +193,13 @@ PlasmoidItem {
                 // AbstractModel, so labelForRow() is empty. KDE exposes the
                 // document filename through Qt.DisplayRole instead.
                 const text = modelText(recentDocumentsModel, row)
-                const token = registerTarget(topIndex, recentDocumentsModel, row)
-                Plasmoid.addAction(
+                Plasmoid.addModelAction(
                     topIndex,
                     recentHandle,
                     qMenuText(text),
                     modelIcon(recentDocumentsModel, row),
-                    token,
+                    recentDocumentsModel,
+                    row,
                     true
                 )
             }
@@ -259,8 +236,7 @@ PlasmoidItem {
 
         for (let row = 0; row < systemActionsModel.count; ++row) {
             const text = systemActionsModel.labelForRow(row)
-            const token = registerTarget(topIndex, systemActionsModel, row)
-            Plasmoid.addAction(topIndex, 0, qMenuText(text), modelIcon(systemActionsModel, row), token, true)
+            Plasmoid.addModelAction(topIndex, 0, qMenuText(text), modelIcon(systemActionsModel, row), systemActionsModel, row, true)
         }
 
         systemDirty = false
@@ -356,12 +332,6 @@ PlasmoidItem {
         function onActionTriggered(actionId) {
             if (actionId.indexOf("kcm:") === 0) {
                 KCMUtils.KCMLauncher.openSystemSettings(actionId.substring(4))
-                return
-            }
-
-            const target = root.actionTargets[actionId]
-            if (target && target.model) {
-                target.model.trigger(target.row, "", null)
             }
         }
     }
