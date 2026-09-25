@@ -5,17 +5,16 @@
  */
 
 import QtQuick
-import QtQuick.Controls
-
 import org.kde.ksvg as KSvg
 import org.kde.plasma.components as PC3
 import org.kde.kirigami as Kirigami
 
-AbstractButton {
+PC3.ToolButton {
     id: controlRoot
 
     property bool menuIsOpen: false
-    property string leadingIcon: ""
+
+    display: PC3.AbstractButton.TextBesideIcon
 
     signal activated()
 
@@ -60,6 +59,13 @@ AbstractButton {
     rightPadding: rest.margins.right
     bottomPadding: rest.margins.bottom
 
+    // Preserve the original Global Menu text color behavior while using
+    // Plasma's standard icon+label content implementation.
+    Kirigami.Theme.textColor: controlRoot.menuState === MenuDelegate.State.Rest
+        ? undefined
+        : controlRoot.Kirigami.Theme.highlightedTextColor
+    Kirigami.Theme.inherit: controlRoot.menuState === MenuDelegate.State.Rest
+
     Accessible.description: i18nc("@info:usagetip", "Open a menu")
 
     background: KSvg.FrameSvgItem {
@@ -72,34 +78,4 @@ AbstractButton {
         }
     }
 
-    contentItem: Item {
-        implicitWidth: menuLabel.implicitWidth
-            + (menuIcon.visible ? menuIcon.implicitWidth + Kirigami.Units.smallSpacing : 0)
-        implicitHeight: menuLabel.implicitHeight
-
-        Kirigami.Icon {
-            id: menuIcon
-            visible: controlRoot.leadingIcon.length > 0
-            source: controlRoot.leadingIcon
-            width: visible ? Kirigami.Units.iconSizes.smallMedium : 0
-            height: width
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-        }
-
-        PC3.Label {
-            id: menuLabel
-            anchors.left: menuIcon.visible ? menuIcon.right : parent.left
-            anchors.leftMargin: menuIcon.visible ? Kirigami.Units.smallSpacing : 0
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-
-            text: controlRoot.Kirigami.MnemonicData.richTextLabel
-            textFormat: Text.StyledText
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
-            color: controlRoot.menuState === MenuDelegate.State.Rest ? Kirigami.Theme.textColor : Kirigami.Theme.highlightedTextColor
-        }
-    }
 }
