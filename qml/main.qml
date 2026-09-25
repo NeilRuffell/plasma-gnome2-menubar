@@ -28,7 +28,17 @@ PlasmoidItem {
     readonly property int kickerGroupRole: Qt.UserRole + 2
 
     preferredRepresentation: fullRepresentation
-    Plasmoid.constraintHints: Plasmoid.CanFillArea
+
+    // Behave like a normal fixed-size panel widget: consume only the natural
+    // menubar length, while filling the panel thickness.
+    Layout.fillWidth: root.vertical
+    Layout.fillHeight: !root.vertical
+    Layout.minimumWidth: buttonGrid.implicitWidth
+    Layout.preferredWidth: buttonGrid.implicitWidth
+    Layout.maximumWidth: buttonGrid.implicitWidth
+    Layout.minimumHeight: buttonGrid.implicitHeight
+    Layout.preferredHeight: buttonGrid.implicitHeight
+    Layout.maximumHeight: buttonGrid.implicitHeight
 
     property var kcmEntries: []
     property bool applicationsDirty: true
