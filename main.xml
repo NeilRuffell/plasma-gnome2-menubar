@@ -8,5 +8,9 @@
             <label>Show icons beside menu items</label>
             <default>true</default>
         </entry>
+        <entry name="showDistributionIcon" type="Bool">
+            <label>Show distribution icon before Applications</label>
+            <default>false</default>
+        </entry>
     </group>
 </kcfg>
