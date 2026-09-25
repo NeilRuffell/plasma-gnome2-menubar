@@ -438,30 +438,6 @@ PlasmoidItem {
             }
         }
 
-        Item {
-            id: distributionIconSlot
-
-            visible: Plasmoid.configuration.showDistributionIcon
-            implicitWidth: visible ? Kirigami.Units.iconSizes.smallMedium + Kirigami.Units.smallSpacing * 2 : 0
-            implicitHeight: visible ? Kirigami.Units.iconSizes.smallMedium : 0
-
-            Layout.fillWidth: root.vertical
-            Layout.fillHeight: !root.vertical
-            Layout.minimumWidth: implicitWidth
-            Layout.preferredWidth: implicitWidth
-            Layout.maximumWidth: implicitWidth
-            Layout.minimumHeight: implicitHeight
-            Layout.preferredHeight: implicitHeight
-            Layout.maximumHeight: implicitHeight
-
-            Kirigami.Icon {
-                anchors.centerIn: parent
-                width: Kirigami.Units.iconSizes.smallMedium
-                height: width
-                source: "start-here"
-            }
-        }
-
         Repeater {
             id: buttonRepeater
             model: [i18n("Applications"), i18n("Places"), i18n("System")]
@@ -475,6 +451,7 @@ PlasmoidItem {
                 Layout.fillWidth: root.vertical
                 Layout.fillHeight: !root.vertical
                 text: modelData
+                leadingIcon: index === 0 && Plasmoid.configuration.showDistributionIcon ? "start-here" : ""
                 Kirigami.MnemonicData.active: altState.pressed
 
                 down: Plasmoid.currentIndex === index
