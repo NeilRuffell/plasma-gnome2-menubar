@@ -52,6 +52,13 @@ public:
                                const QVariant &icon,
                                const QString &actionId,
                                bool enabled = true);
+    Q_INVOKABLE void addModelAction(int topIndex,
+                                    int parentHandle,
+                                    const QString &text,
+                                    const QVariant &icon,
+                                    QObject *model,
+                                    int row,
+                                    bool enabled = true);
     Q_INVOKABLE void addSeparator(int topIndex, int parentHandle);
 
     // Returns the installed System Settings hierarchy using KDE's own category
